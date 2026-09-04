@@ -1,0 +1,52 @@
+{
+  "tenants": [],
+  "sessions": [],
+  "ledger": [],
+  "auditLogs": [
+    {
+      "id": "evt_102a4350-fa50-4471-8b55-5d2f7772f45f",
+      "timestamp": "2026-09-04T07:14:14.390Z",
+      "traceId": "trc_dev_7a33385d",
+      "correlationId": "corr_trc_dev_7a33385d",
+      "actorIp": "local_client",
+      "event": "dev.session_issued",
+      "severity": "S3",
+      "details": "Sesión de desarrollo emitida para Dev Admin (SovereignOwner).",
+      "remediated": true,
+      "verificationHash": "a138ae1f74f809a8e77552b8d3ccc3fbd0a27860b9e1b98bd0407b24c095189b",
+      "previousLogHash": "bdd64cd834a403c4d262a761ee7921a2f8e976bfae4370456b24d1c4e0b46653"
+    },
+    {
+      "id": "evt_c70c6e50-5b77-40d9-8635-6ae5588718d5",
+      "timestamp": "2026-09-04T07:11:04.100Z",
+      "traceId": "trc_oauth_65e42c4b",
+      "correlationId": "corr_trc_oauth_65e42c4b",
+      "actorIp": "local_client",
+      "event": "oauth.url_denied",
+      "severity": "S1",
+      "details": "Flujo OAuth manual deshabilitado fuera del modo desarrollo.",
+      "remediated": false,
+      "verificationHash": "bdd64cd834a403c4d262a761ee7921a2f8e976bfae4370456b24d1c4e0b46653",
+      "previousLogHash": "234945a28d7a5876e6389041e637b9afe3442ba7e6a3254c5d6d06e9517e492e"
+    },
+    {
+      "id": "evt_d0953028-b094-4ee9-a5fd-681003e63379",
+      "timestamp": "2026-09-04T07:11:04.054Z",
+      "traceId": "trc_dev_af70ed4f",
+      "correlationId": "corr_trc_dev_af70ed4f",
+      "actorIp": "local_client",
+      "event": "dev.session_denied",
+      "severity": "S1",
+      "details": "Sesión de desarrollo solicitada fuera del modo desarrollo.",
+      "remediated": false,
+      "verificationHash": "234945a28d7a5876e6389041e637b9afe3442ba7e6a3254c5d6d06e9517e492e",
+      "previousLogHash": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "apiKeys": [],
+  "settings": {
+    "pqcEnabled": false,
+    "activeHeadCount": 12,
+    "activeNucleusCount": 24
+  }
+}
