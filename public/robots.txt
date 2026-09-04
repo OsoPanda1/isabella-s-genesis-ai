@@ -1,14 +1,104 @@
+# ==============================================================================
+# ROBOTS.TXT - OPTIMIZACIÓN EXTREMA Y CONTROL DE CRAWL BUDGET
+# Proyecto: Isabella Villaseñor AI
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. BOT DE INDEXACIÓN Y BÚSQUEDA GENERAL (Google, Bing, Yahoo, DuckDuckGo)
+# ------------------------------------------------------------------------------
 User-agent: Googlebot
-Allow: /
-
+User-agent: Googlebot-Image
+User-agent: Googlebot-Video
 User-agent: Bingbot
-Allow: /
+User-agent: Slurp
+User-agent: DuckDuckBot
+User-agent: YandexBot
+User-agent: Baiduspider
 
+# Permitir indexación de rutas públicas
+Allow: /
+Allow: /public/
+Allow: /src/assets/
+
+# Bloquear archivos de sistema, configuración y dependencias
+Disallow: /*.json$
+Disallow: /*.lock$
+Disallow: /*.env*
+Disallow: /node_modules/
+Disallow: /.git/
+Disallow: /.github/
+Disallow: /supabase/
+
+# Permitir explícitamente recursos críticos para renderizado visual (Google/Bing)
+Allow: /*.css$
+Allow: /*.js$
+Allow: /*.png$
+Allow: /*.jpg$
+Allow: /*.jpeg$
+Allow: /*.webp$
+Allow: /*.svg$
+Allow: /*.mp3$
+Allow: /*.mp4$
+
+
+# ------------------------------------------------------------------------------
+# 2. RASTREADORES DE REDES SOCIALES Y PREVIAS (OpenGraph, Twitter Cards)
+# ------------------------------------------------------------------------------
 User-agent: Twitterbot
-Allow: /
-
 User-agent: facebookexternalhit
-Allow: /
+User-agent: LinkedInBot
+User-agent: WhatsApp
+User-agent: TelegramBot
+User-agent: Discordbot
+User-agent: Pinterestbot
 
+Allow: /
+Allow: /public/
+Allow: /isabella-intro-2026.html
+Disallow: /node_modules/
+Disallow: /.git/
+
+
+# ------------------------------------------------------------------------------
+# 3. CONTROL DE SCRAPERS DE INTELENCIA ARTIFICIAL (Opcional según tu estrategia)
+# ------------------------------------------------------------------------------
+# Si deseas bloquear el entrenamiento de LLMs externos con tu código/contenido:
+User-agent: GPTBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: Claude-Web
+User-agent: CCBot
+User-agent: PerplexityBot
+User-agent: ByteSpider
+Disallow: /
+
+
+# ------------------------------------------------------------------------------
+# 4. BLOQUEO DE BOTS MALICIOSOS Y HERRAMIENTAS DE SPAM SEO
+# ------------------------------------------------------------------------------
+User-agent: AhrefsBot
+User-agent: MJ12bot
+User-agent: SemrushBot
+User-agent: DotBot
+User-agent: Rogerbot
+User-agent: MegaIndex.ru
+User-agent: BLEXBot
+Disallow: /
+
+
+# ------------------------------------------------------------------------------
+# 5. REGLA GLOBAL DE RESPALDO (FALLBACK)
+# ------------------------------------------------------------------------------
 User-agent: *
 Allow: /
+Disallow: /node_modules/
+Disallow: /.git/
+Disallow: /.github/
+Disallow: /supabase/
+
+
+# ------------------------------------------------------------------------------
+# 6. UBICACIÓN DE MAPAS DEL SITIO (SITEMAPS)
+# ------------------------------------------------------------------------------
+Sitemap: https://isabella.ai/sitemap.xml
+Sitemap: https://isabella.ai/sitemap-pages.xml
