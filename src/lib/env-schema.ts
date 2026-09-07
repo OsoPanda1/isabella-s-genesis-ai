@@ -170,6 +170,7 @@ export const envSchema = z.object({
 
   // --- AI GATEWAY ---
   GEMINI_API_KEY: optionalString(),
+  LOVABLE_API_KEY: optionalString(),
   LLM_DEFAULT_MODEL: z.string().default("google/gemini-3.6-flash"),
   LLM_VOICE_MODEL: z.string().default("openai/gpt-4o-mini-tts"),
   VOICE_API_URL: optionalUrl(),

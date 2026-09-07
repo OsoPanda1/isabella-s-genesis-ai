@@ -65,8 +65,20 @@ export class SecretsManager {
     return this.getActiveSecretSync("bookpi", "BOOKPI_SIGNING_KEY", "BOOKPI_SIGNING_KEY");
   }
 
+  /**
+   * Clave de la puerta cognitiva. Prioriza la puerta soberana de Lovable
+   * (compatible OpenAI) y admite Gemini directo como proveedor alterno.
+   */
   aiGatewayKey(): string {
+    const lovable = this.cachedConfig.LOVABLE_API_KEY;
+    if (lovable && String(lovable).trim() !== "") return String(lovable);
     return this.getActiveSecretSync("ai", "GEMINI_API_KEY", "GEMINI_API_KEY");
+  }
+
+  /** Proveedor cognitivo activo, derivado de los secretos disponibles. */
+  aiProvider(): "lovable-gateway" | "gemini" {
+    const lovable = this.cachedConfig.LOVABLE_API_KEY;
+    return lovable && String(lovable).trim() !== "" ? "lovable-gateway" : "gemini";
   }
 
   aegisAuditSecret(): string {

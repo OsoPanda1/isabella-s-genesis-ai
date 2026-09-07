@@ -86,7 +86,9 @@ async function readiness(): Promise<Response> {
   try {
     const cfg = config();
     // Simulate Isabella AI Genesis connectivity or configuration check
-    const isGenesisConfigured = Boolean(cfg.GEMINI_API_KEY && cfg.CROWN_POLICY_SIGNING_KEY);
+    const isGenesisConfigured = Boolean(
+      (cfg.LOVABLE_API_KEY || cfg.GEMINI_API_KEY) && cfg.CROWN_POLICY_SIGNING_KEY,
+    );
     checks.isabella_genesis = { ok: isGenesisConfigured };
     if (!isGenesisConfigured && isProductionLike(resolveRuntimeMode(cfg.ISABELLA_RUNTIME_MODE))) {
       checks.isabella_genesis.error = "genesis_service_unconfigured";
