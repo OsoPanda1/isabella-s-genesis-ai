@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { Pool } from "pg";
+import { config } from "./config";
 import { SecuritySystem } from "./security";
 import type { ApiKeyRecord } from "./credential-types";
 
@@ -22,8 +24,8 @@ export interface BookPILedgerBlock {
   tokensConsumed: number;
   previousHash: string;
   blockHash: string;
-  pqcSignature: string | null; // Post-Quantum Cryptography placeholder (NOT_IMPLEMENTED)
-  signatureAlgorithm: string;
+  pqcSignature: string | null;
+  signatureAlgorithm: "ECDSA-P384" | "UNSIGNED_DEV";
   status: "settled" | "pending" | "refunded";
 }
 
@@ -81,6 +83,28 @@ export interface DatabaseSchema {
   ledger: BookPILedgerBlock[];
   auditLogs: AuditLog[];
   apiKeys: ApiKeyRecord[];
+  monetization?: Record<
+    string,
+    {
+      userId: string;
+      earnedBalanceCents: number;
+      qualifiedUses: number;
+      approvedContributions: number;
+      trainingCompleted: boolean;
+      identityVerified: boolean;
+      paymentAccountVerified: boolean;
+      profileComplete: boolean;
+      sanctioned: boolean;
+      underFraudReview: boolean;
+      withdrawals: {
+        payoutId: string;
+        amountCents: number;
+        status: "scheduled" | "processed" | "held" | "rejected";
+        idempotencyKey: string;
+        createdAt: string;
+      }[];
+    }
+  >;
   settings: Record<string, unknown>;
 }
 
@@ -96,6 +120,7 @@ function emptyDatabase(): DatabaseSchema {
     ledger: [],
     auditLogs: [],
     apiKeys: [],
+    monetization: {},
     settings: {
       pqcEnabled: false,
       activeHeadCount: 12,
@@ -108,42 +133,224 @@ function emptyDatabase(): DatabaseSchema {
 const GENESIS_PREVIOUS_HASH = "0000000000000000000000000000000000000000000000000000000000000000";
 
 // ============================================================================
-// HELPER METHODS: PERSISTENT STORAGE CONTROLLER (Atomic File I/O)
+// HELPER METHODS: PERSISTENT STORAGE CONTROLLER
+// Dev/test → Atomic File I/O. Staging/Production → PostgreSQL (sovereign_state).
 // ============================================================================
+
+let pgPool: Pool | null = null;
+function getPgPool(): Pool | null {
+  try {
+    const url = config().DATABASE_URL;
+    if (!url) return null;
+    if (!pgPool) {
+      pgPool = new Pool({ connectionString: url, max: 5 });
+      pgPool.on("error", (err) => {
+        console.error("Unexpected error on idle Sovereign State pool", err);
+      });
+    }
+    return pgPool;
+  } catch {
+    return null;
+  }
+}
+
+// In-memory cache for the hot path. In production it is refreshed from
+// PostgreSQL through a bounded, de-duplicated refresh window (see hydrate()).
+let memoryDb: DatabaseSchema | null = null;
+let lastHydratedAt = 0;
+let hydrationInFlight: Promise<DatabaseSchema> | null = null;
+
+// Self-provisioning: creates the sovereign_state table once per process if it
+// does not exist yet, so the production DB does not need manual DDL setup.
+let stateTableReady = false;
+async function ensureStateTable(pool: Pool): Promise<void> {
+  if (stateTableReady) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.sovereign_state (
+      id varchar(32) primary key,
+      payload jsonb not null,
+      version varchar(32) not null default 'v1',
+      updated_at timestamptz not null default now()
+    )
+  `);
+  stateTableReady = true;
+}
+
+function isProductionRuntime(): boolean {
+  try {
+    const cfg = config();
+    return (
+      cfg.NODE_ENV === "production" ||
+      cfg.ISABELLA_RUNTIME_MODE === "production" ||
+      cfg.ISABELLA_RUNTIME_MODE === "staging"
+    );
+  } catch {
+    return (
+      process.env.NODE_ENV === "production" || process.env.ISABELLA_RUNTIME_MODE === "production"
+    );
+  }
+}
 
 export class SovereignDB {
   /**
-   * Carga el estado persistente real. Si no existe archivo o está corrupto,
-   * arranca desde un estado vacío auténtico. Nunca fabrica datos (zero mockdata).
+   * Refreshes the in-memory cache from durable PostgreSQL storage.
+   *
+   * `maxAgeMs` prevents a database read on every request; concurrent callers
+   * share one refresh. Mutating paths must request a fresh read (`maxAgeMs: 0`)
+   * before a read-modify-write sequence.
    */
-  public static load(): DatabaseSchema {
+  public static async hydrate({ maxAgeMs = 0 }: { maxAgeMs?: number } = {}): Promise<DatabaseSchema> {
+    if (memoryDb && maxAgeMs > 0 && Date.now() - lastHydratedAt < maxAgeMs) {
+      return memoryDb;
+    }
+    if (hydrationInFlight) return hydrationInFlight;
+
+    hydrationInFlight = this.hydrateFresh();
     try {
-      if (fs.existsSync(PERSISTENCE_FILE_PATH)) {
-        const raw = fs.readFileSync(PERSISTENCE_FILE_PATH, "utf8");
-        const db = JSON.parse(raw) as DatabaseSchema;
-        return db;
+      return await hydrationInFlight;
+    } finally {
+      hydrationInFlight = null;
+    }
+  }
+
+  private static async hydrateFresh(): Promise<DatabaseSchema> {
+    if (!isProductionRuntime()) {
+      if (!memoryDb) {
+        memoryDb = emptyDatabase();
       }
-    } catch (e) {
+      lastHydratedAt = Date.now();
+      return memoryDb;
+    }
+    const pool = getPgPool();
+    if (pool) {
+      try {
+        await ensureStateTable(pool);
+        const { rows } = await pool.query(
+          "SELECT payload FROM public.sovereign_state WHERE id = 'canonical' LIMIT 1",
+        );
+        if (rows[0]?.payload) {
+          memoryDb = rows[0].payload as DatabaseSchema;
+          lastHydratedAt = Date.now();
+          return memoryDb;
+        }
+      } catch (e) {
+        console.error("[SovereignDB] hydrate failed, using in-memory state:", e);
+      }
+    } else {
       console.error(
-        "No se pudo cargar la base de datos persistente. Restableciendo estado vacío:",
-        e,
+        "[SovereignDB] No DATABASE_URL in production — Sovereign state is not durable.",
       );
     }
-    const db = emptyDatabase();
-    this.save(db);
-    return db;
+    memoryDb = emptyDatabase();
+    lastHydratedAt = Date.now();
+    return memoryDb;
+  }
+
+  // Resets the in-memory cache (used by tests).
+  public static resetMemoryCache(): void {
+    memoryDb = null;
+    lastHydratedAt = 0;
+    hydrationInFlight = null;
+  }
+
+  /**
+   * Carga el estado persistente real (sincrónico, hot path). En dev/test usa el
+   * archivo JSON; en producción devuelve la caché de memoria hidratada desde
+   * PostgreSQL. Nunca fabrica datos (zero mockdata).
+   */
+  public static load(): DatabaseSchema {
+    const production = isProductionRuntime();
+
+    if (!production) {
+      try {
+        if (fs.existsSync(PERSISTENCE_FILE_PATH)) {
+          const raw = fs.readFileSync(PERSISTENCE_FILE_PATH, "utf8");
+          const db = JSON.parse(raw) as DatabaseSchema;
+          memoryDb = db;
+          return db;
+        }
+      } catch (e) {
+        console.error(
+          "No se pudo cargar la base de datos persistente. Restableciendo estado vacío:",
+          e,
+        );
+      }
+      const db = emptyDatabase();
+      memoryDb = db;
+      this.save(db);
+      return db;
+    }
+
+    // Production: return in-memory cache (hydrate() must be awaited first).
+    if (!memoryDb) {
+      // Fallback: an empty state. A real hydrate() call will repopulate it.
+      memoryDb = emptyDatabase();
+    }
+    return memoryDb;
   }
 
   private static save(db: DatabaseSchema) {
-    try {
-      const dir = path.dirname(PERSISTENCE_FILE_PATH);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+    memoryDb = db;
+    lastHydratedAt = Date.now();
+    const production = isProductionRuntime();
+
+    if (!production) {
+      try {
+        const dir = path.dirname(PERSISTENCE_FILE_PATH);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(PERSISTENCE_FILE_PATH, JSON.stringify(db, null, 2), "utf8");
+      } catch (e) {
+        console.error("Fallo crítico al escribir en la base de datos persistente:", e);
       }
-      fs.writeFileSync(PERSISTENCE_FILE_PATH, JSON.stringify(db, null, 2), "utf8");
-    } catch (e) {
-      console.error("Fallo crítico al escribir en la base de datos persistente:", e);
+      return;
     }
+
+    // Production: persist to PostgreSQL async (fire-and-forget with error log).
+    const pool = getPgPool();
+    if (!pool) {
+      console.error(
+        "[SovereignDB] No DATABASE_URL in production — sovereign state write skipped (NOT durable).",
+      );
+      return;
+    }
+    const payload = JSON.stringify(db);
+    const persist = async () => {
+      await ensureStateTable(pool);
+      await pool.query(
+        `INSERT INTO public.sovereign_state (id, payload, version, updated_at)
+         VALUES ('canonical', $1::jsonb, 'v1', now())
+         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, version = 'v1', updated_at = now()`,
+        [payload],
+      );
+    };
+    persist()
+      .then(() => {
+        /* persisted */
+      })
+      .catch((e) => {
+        console.error("[SovereignDB] Failed to persist sovereign state to Postgres:", e);
+      });
+  }
+
+  /**
+   * Destructive overwrite of the entire durable state (used by tests / reset).
+   */
+  public static async replaceState(db: DatabaseSchema): Promise<void> {
+    memoryDb = db;
+    lastHydratedAt = Date.now();
+    const pool = getPgPool();
+    if (!pool || !isProductionRuntime()) {
+      return this.save(db) as unknown as void;
+    }
+    await ensureStateTable(pool);
+    await pool.query(
+      `INSERT INTO public.sovereign_state (id, payload, version, updated_at)
+       VALUES ('canonical', $1::jsonb, 'v1', now())
+       ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, version = 'v1', updated_at = now()`,
+      [JSON.stringify(db)],
+    );
   }
 
   // --- Provisioning de identidad (real, no mockdata) ---
@@ -246,6 +453,14 @@ export class SovereignDB {
     // Dynamic hash calculation (SHA-256 with real cryptographic integrity)
     const blockContent = `${index}-${timestamp}-${tenantId}-${userId}-${operation}-${category}-${costDecimal}-${tokens}-${prevHash}`;
     const blockHash = this.sha256(blockContent);
+    const signingKey = config().BOOKPI_SIGNING_KEY;
+    const isProduction = isProductionRuntime();
+    if (isProduction && !signingKey) {
+      throw new Error("BookPI requiere BOOKPI_SIGNING_KEY en producción.");
+    }
+    const pqcSignature = signingKey
+      ? crypto.sign("sha384", Buffer.from(blockContent), signingKey).toString("base64url")
+      : null;
 
     const newBlock: BookPILedgerBlock = {
       index,
@@ -258,8 +473,8 @@ export class SovereignDB {
       tokensConsumed: tokens,
       previousHash: prevHash,
       blockHash,
-      pqcSignature: null,
-      signatureAlgorithm: "NOT_IMPLEMENTED",
+      pqcSignature,
+      signatureAlgorithm: signingKey ? "ECDSA-P384" : "UNSIGNED_DEV",
       status: "settled",
     };
 
@@ -304,6 +519,14 @@ export class SovereignDB {
 
     const blockData = `${newIndex}-${timestamp}-${tenantId}-${block.userId}-REFUND_EVENT: Reembolso de transacción index ${index}-REFUND_EVENT-${costDecimal}-0-${prevHash}`;
     const blockHash = this.sha256(blockData);
+    const signingKey = config().BOOKPI_SIGNING_KEY;
+    const isProduction = isProductionRuntime();
+    if (isProduction && !signingKey) {
+      return { success: false, error: "BookPI requiere BOOKPI_SIGNING_KEY en producción." };
+    }
+    const pqcSignature = signingKey
+      ? crypto.sign("sha384", Buffer.from(blockData), signingKey).toString("base64url")
+      : null;
 
     const refundBlock: BookPILedgerBlock = {
       index: newIndex,
@@ -316,8 +539,8 @@ export class SovereignDB {
       tokensConsumed: 0,
       previousHash: prevHash,
       blockHash,
-      pqcSignature: null,
-      signatureAlgorithm: "SHA-256",
+      pqcSignature,
+      signatureAlgorithm: signingKey ? "ECDSA-P384" : "UNSIGNED_DEV",
       status: "settled",
     };
 
@@ -418,11 +641,37 @@ export class SovereignDB {
         };
       }
 
-      // 4. Validate Post-Quantum Cryptographic signature status
-      if (block.pqcSignature !== null || block.signatureAlgorithm !== "NOT_IMPLEMENTED") {
+      // 4. Validate signing policy. Production never accepts unsigned BookPI blocks.
+      if (block.signatureAlgorithm === "UNSIGNED_DEV" || block.pqcSignature === null) {
+        if (isProductionRuntime()) {
+          return {
+            success: false,
+            error: `Bloque ${i} sin firma BookPI válida en modo productivo.`,
+            corruptedIndex: i,
+          };
+        }
+        continue;
+      }
+
+      if (block.signatureAlgorithm !== "ECDSA-P384" || !config().BOOKPI_SIGNING_KEY) {
         return {
           success: false,
-          error: `Firma digital Post-Cuántica inconsistente en bloque ${i}. Algoritmo debe ser NOT_IMPLEMENTED.`,
+          error: `Algoritmo o clave BookPI inválidos en bloque ${i}.`,
+          corruptedIndex: i,
+        };
+      }
+
+      if (
+        !crypto.verify(
+          "sha384",
+          Buffer.from(blockContent),
+          config().BOOKPI_SIGNING_KEY,
+          Buffer.from(block.pqcSignature, "base64url"),
+        )
+      ) {
+        return {
+          success: false,
+          error: `Firma BookPI inválida en bloque ${i}.`,
           corruptedIndex: i,
         };
       }
@@ -531,6 +780,53 @@ export class SovereignDB {
     const db = this.load();
     db.apiKeys = keys;
     this.save(db);
+  }
+
+  public static saveMarketplaceListings(listings: unknown[]): void {
+    const db = this.load();
+    db.settings = db.settings || {};
+    db.settings.marketplaceListings = listings;
+    this.save(db);
+  }
+
+  /**
+   * Cuenta de monetización real: ceros hasta que existan eventos económicos
+   * verificados (compras marketplace, retiros). Sin saldos iniciales, sin
+   * identidad KYC inventada: todo flag de verificación inicia en `false` y
+   * solo un flujo de verificación real puede activarlo.
+   */
+  public static getMonetizationAccount(userId: string) {
+    const db = this.load();
+    db.monetization = db.monetization || {};
+    if (!db.monetization[userId]) {
+      db.monetization[userId] = {
+        userId,
+        earnedBalanceCents: 0,
+        qualifiedUses: 0,
+        approvedContributions: 0,
+        trainingCompleted: false,
+        identityVerified: false,
+        paymentAccountVerified: false,
+        profileComplete: false,
+        sanctioned: false,
+        underFraudReview: false,
+        withdrawals: [],
+      };
+      this.save(db);
+    }
+    return db.monetization[userId];
+  }
+
+  public static updateMonetizationAccount(userId: string, update: Record<string, unknown>) {
+    const db = this.load();
+    db.monetization = db.monetization || {};
+    const account = this.getMonetizationAccount(userId);
+    db.monetization[userId] = {
+      ...account,
+      ...update,
+    };
+    this.save(db);
+    return db.monetization[userId];
   }
 }
 
@@ -776,9 +1072,13 @@ function tokenizeExpression(input: string): SandboxToken[] {
       i += 1;
       continue;
     }
-    if ((ch >= "0" && ch <= "9") || (ch === "." && (input[i + 1] ?? "") >= "0" && (input[i + 1] ?? "") <= "9")) {
+    if (
+      (ch >= "0" && ch <= "9") ||
+      (ch === "." && (input[i + 1] ?? "") >= "0" && (input[i + 1] ?? "") <= "9")
+    ) {
       let j = i + 1;
-      while (j < input.length && ((input[j]! >= "0" && input[j]! <= "9") || input[j] === ".")) j += 1;
+      while (j < input.length && ((input[j]! >= "0" && input[j]! <= "9") || input[j] === "."))
+        j += 1;
       const raw = input.slice(i, j);
       if (!Number.isFinite(Number(raw))) {
         throw new Error(`Literal numérico inválido [${raw}].`);
@@ -787,12 +1087,7 @@ function tokenizeExpression(input: string): SandboxToken[] {
       i = j;
       continue;
     }
-    if (
-      (ch >= "a" && ch <= "z") ||
-      (ch >= "A" && ch <= "Z") ||
-      ch === "_" ||
-      ch === "$"
-    ) {
+    if ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch === "_" || ch === "$") {
       let j = i + 1;
       while (
         j < input.length &&
@@ -810,7 +1105,14 @@ function tokenizeExpression(input: string): SandboxToken[] {
     }
     if (".+-*/%^(),<>=".includes(ch)) {
       const two = input.slice(i, i + 2);
-      if (two === "<=" || two === ">=" || two === "==" || two === "!=" || two === "&&" || two === "||") {
+      if (
+        two === "<=" ||
+        two === ">=" ||
+        two === "==" ||
+        two === "!=" ||
+        two === "&&" ||
+        two === "||"
+      ) {
         tokens.push({ kind: "op", value: two });
         i += 2;
         continue;
@@ -901,12 +1203,30 @@ class ExpressionEvaluator {
     const left = this.parseSum(depth, variables);
     const t = this.peek();
     if (t?.kind === "op") {
-      if (t.value === "<") { this.pos += 1; return this.toNumber(left) < this.toNumber(this.parseSum(depth, variables)); }
-      if (t.value === "<=") { this.pos += 1; return this.toNumber(left) <= this.toNumber(this.parseSum(depth, variables)); }
-      if (t.value === ">") { this.pos += 1; return this.toNumber(left) > this.toNumber(this.parseSum(depth, variables)); }
-      if (t.value === ">=") { this.pos += 1; return this.toNumber(left) >= this.toNumber(this.parseSum(depth, variables)); }
-      if (t.value === "==") { this.pos += 1; return this.toNumber(left) === this.toNumber(this.parseSum(depth, variables)); }
-      if (t.value === "!=") { this.pos += 1; return this.toNumber(left) !== this.toNumber(this.parseSum(depth, variables)); }
+      if (t.value === "<") {
+        this.pos += 1;
+        return this.toNumber(left) < this.toNumber(this.parseSum(depth, variables));
+      }
+      if (t.value === "<=") {
+        this.pos += 1;
+        return this.toNumber(left) <= this.toNumber(this.parseSum(depth, variables));
+      }
+      if (t.value === ">") {
+        this.pos += 1;
+        return this.toNumber(left) > this.toNumber(this.parseSum(depth, variables));
+      }
+      if (t.value === ">=") {
+        this.pos += 1;
+        return this.toNumber(left) >= this.toNumber(this.parseSum(depth, variables));
+      }
+      if (t.value === "==") {
+        this.pos += 1;
+        return this.toNumber(left) === this.toNumber(this.parseSum(depth, variables));
+      }
+      if (t.value === "!=") {
+        this.pos += 1;
+        return this.toNumber(left) !== this.toNumber(this.parseSum(depth, variables));
+      }
     }
     return left;
   }
@@ -1000,7 +1320,11 @@ class ExpressionEvaluator {
     throw new Error(`Identificador no autorizado [${name}].`);
   }
 
-  private callFunction(name: string, depth: number, variables: Record<string, number>): SandboxValue {
+  private callFunction(
+    name: string,
+    depth: number,
+    variables: Record<string, number>,
+  ): SandboxValue {
     this.expectOp("(");
     const args: number[] = [];
     if (!this.matchOp(")")) {
@@ -1017,16 +1341,26 @@ class ExpressionEvaluator {
       return args[0]!;
     };
     switch (name) {
-      case "abs": return Math.abs(single());
-      case "round": return Math.round(single());
-      case "floor": return Math.floor(single());
-      case "ceil": return Math.ceil(single());
-      case "sqrt": return Math.sqrt(single());
-      case "log": return Math.log(single());
-      case "exp": return Math.exp(single());
-      case "sin": return Math.sin(single());
-      case "cos": return Math.cos(single());
-      case "tan": return Math.tan(single());
+      case "abs":
+        return Math.abs(single());
+      case "round":
+        return Math.round(single());
+      case "floor":
+        return Math.floor(single());
+      case "ceil":
+        return Math.ceil(single());
+      case "sqrt":
+        return Math.sqrt(single());
+      case "log":
+        return Math.log(single());
+      case "exp":
+        return Math.exp(single());
+      case "sin":
+        return Math.sin(single());
+      case "cos":
+        return Math.cos(single());
+      case "tan":
+        return Math.tan(single());
       case "min":
         if (args.length < 1) throw new Error(`Función [${name}] requiere al menos 1 argumento.`);
         return Math.min(...args);
@@ -1034,7 +1368,8 @@ class ExpressionEvaluator {
         if (args.length < 1) throw new Error(`Función [${name}] requiere al menos 1 argumento.`);
         return Math.max(...args);
       case "pow":
-        if (args.length !== 2) throw new Error(`Función [${name}] requiere exactamente 2 argumentos.`);
+        if (args.length !== 2)
+          throw new Error(`Función [${name}] requiere exactamente 2 argumentos.`);
         return Math.pow(args[0]!, args[1]!);
       default:
         throw new Error(`Función no autorizada [${name}].`);

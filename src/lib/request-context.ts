@@ -28,45 +28,29 @@ function genId(): string {
 }
 
 export function createRequestContext(
-  partial: Partial<Pick<RequestContextData, "clientIp" | "method" | "path" | "route">> = {},
+  opts: Partial<Pick<RequestContextData, "clientIp" | "method" | "path" | "route">>,
 ): RequestContextData {
+  const startedAt = Date.now();
   return {
     traceId: genId(),
     correlationId: genId(),
     requestId: genId(),
-    startedAt: Date.now(),
-    ...partial,
+    startedAt,
+    ...(opts.clientIp !== undefined ? { clientIp: opts.clientIp } : {}),
+    ...(opts.method !== undefined ? { method: opts.method } : {}),
+    ...(opts.path !== undefined ? { path: opts.path } : {}),
+    ...(opts.route !== undefined ? { route: opts.route } : {}),
   };
 }
 
-/**
- * Ejecuta la función dentro del contexto de request (AsyncLocalStorage.run).
- * Todo lo que se ejecute dentro (repositorios, audit, ledgers) podrá
- * recuperar el contexto con `getRequestContext()`.
- */
-export function withRequestContext<T>(
-  ctx: RequestContextData,
-  fn: () => T | Promise<T>,
-): Promise<T> {
-  return requestStore.run(ctx, () => Promise.resolve(fn()));
+export function withRequestContext<T>(data: RequestContextData, fn: () => T): T {
+  return requestStore.run(data, fn);
 }
 
-export function getRequestContext(): RequestContextData | null {
-  return requestStore.getStore() ?? null;
-}
-
-export function getOrCreateRequestContext(): RequestContextData {
-  return getRequestContext() ?? createRequestContext();
+export function getRequestContext(): RequestContextData | undefined {
+  return requestStore.getStore();
 }
 
 export function getTraceId(): string {
-  return getRequestContext()?.traceId ?? "no-trace";
-}
-
-export function getCorrelationId(): string {
-  return getRequestContext()?.correlationId ?? "no-correlation";
-}
-
-export function elapsedMs(ctx: RequestContextData): number {
-  return Date.now() - ctx.startedAt;
+  return getRequestContext()?.traceId ?? "";
 }

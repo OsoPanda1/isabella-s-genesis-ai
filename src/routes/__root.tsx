@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
 import {
   Outlet,
   Link,
@@ -7,7 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 
@@ -71,7 +71,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
-export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+export const Route = createRootRouteWithContext()({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -104,7 +104,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=Inter+Tight:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap",
       },
-      { rel: "icon", href: "/favicon.png", type: "image/png" },
+      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
 
@@ -116,7 +116,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="es" className="bg-background">
       <head>
         <HeadContent />
       </head>
@@ -128,13 +128,45 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
+class ClientErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; message: string }
+> {
+  override state = { hasError: false, message: "" };
 
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      hasError: true,
+      message: error instanceof Error ? error.message : "Error de renderizado del cliente",
+    };
+  }
+
+  override componentDidCatch(error: unknown, info: ErrorInfo) {
+    console.error("[Isabella] client render failure", { error, componentStack: info.componentStack });
+  }
+
+  override render() {
+    if (this.state.hasError) {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
+          <section className="glass-strong w-full max-w-xl rounded-3xl p-8 text-center">
+            <p className="font-mono text-xs uppercase tracking-[0.24em] text-electric">C.R.O.W.N. Recovery</p>
+            <h1 className="mt-4 text-2xl font-semibold">La interfaz encontró un error</h1>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">El backend permanece protegido. Recarga la interfaz para reintentar el montaje.</p>
+            <button type="button" onClick={() => window.location.reload()} className="mt-6 rounded-xl bg-primary px-5 py-3 font-mono text-xs uppercase tracking-wider text-primary-foreground">Reintentar interfaz</button>
+            <p className="mt-4 font-mono text-[10px] text-muted-foreground">Código de recuperación: CROWN-RENDER-01</p>
+          </section>
+        </main>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function RootComponent() {
   return (
-    <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+    <ClientErrorBoundary>
       <Outlet />
-    </QueryClientProvider>
+    </ClientErrorBoundary>
   );
 }

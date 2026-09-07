@@ -13,14 +13,7 @@
 
 export type ToolRisk = "low" | "medium" | "high" | "critical";
 export type ToolCategory =
-  | "memory"
-  | "ledger"
-  | "compute"
-  | "storage"
-  | "network"
-  | "identity"
-  | "system"
-  | "creativity";
+  "memory" | "ledger" | "compute" | "storage" | "network" | "identity" | "system" | "creativity";
 
 export interface RegisteredTool {
   name: string;
@@ -136,18 +129,20 @@ export const TOOL_REGISTRY_SEED: readonly RegisteredTool[] = [
  * pero el comportamiento default es deny-by-default: toda herramienta no
  * registrada se considera NO autorizada.
  */
-export function createToolRegistry(
-  seed: readonly RegisteredTool[] = TOOL_REGISTRY_SEED,
-) {
+export function createToolRegistry(seed: readonly RegisteredTool[] = TOOL_REGISTRY_SEED) {
   const byName = new Map<string, RegisteredTool>();
-  for (const tool of seed) byName.set(tool.name, { ...tool, requiredPermissions: [...tool.requiredPermissions] });
+  for (const tool of seed)
+    byName.set(tool.name, { ...tool, requiredPermissions: [...tool.requiredPermissions] });
 
   return {
     /** Verifica si una herramienta está en la whitelist y qué riesgo tiene. */
     check(name: string): ToolExecutionDecision {
       const tool = byName.get(name);
       if (!tool) {
-        return { allowed: false, reason: `Herramienta '${name}' no está en la whitelist Zero Trust.` };
+        return {
+          allowed: false,
+          reason: `Herramienta '${name}' no está en la whitelist Zero Trust.`,
+        };
       }
       return { allowed: true, reason: `Herramienta '${name}' registrada con riesgo ${tool.risk}.` };
     },

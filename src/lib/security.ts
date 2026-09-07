@@ -28,21 +28,30 @@ const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute window
 const rateLimitCache = new Map<string, { count: number; windowStart: number }>();
 
 // Upstash Redis client lazy — only instantiated if REDIS_URL/KV_URL present
-let redisClient: { incr: (key: string) => Promise<number>; expire: (key: string, sec: number) => Promise<number>; ttl: (key: string) => Promise<number> } | null = null;
+let redisClient: {
+  incr: (key: string) => Promise<number>;
+  expire: (key: string, sec: number) => Promise<number>;
+  ttl: (key: string) => Promise<number>;
+} | null = null;
 async function getRedis(): Promise<typeof redisClient> {
   if (redisClient) return redisClient;
-  const url = config().REDIS_URL || (config() as unknown as Record<string, unknown>).KV_URL as string | undefined || process.env.REDIS_URL || process.env.KV_URL;
+  const url = config().REDIS_URL || config().KV_URL;
   if (!url) return null;
   try {
     // Dynamic import to avoid hard dependency in dev without Redis
-    const mod = await import("@upstash/redis").catch(() => null) as unknown as { Redis?: new (opts: { url: string; token?: string }) => unknown } | null;
+    const mod = (await import("@upstash/redis").catch(() => null)) as unknown as {
+      Redis?: new (opts: { url: string; token?: string }) => unknown;
+    } | null;
     if (!mod?.Redis) {
       // Fallback to simple fetch-based incr if @upstash/redis not installed — use memory
       return null;
     }
-    const token = (config() as unknown as Record<string, unknown>).KV_REST_API_TOKEN as string | undefined || process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_TOKEN;
-    // @ts-ignore — Upstash Redis constructor
-    redisClient = new (mod.Redis as unknown as new (opts: Record<string, unknown>) => typeof redisClient)({ url, token } as Record<string, unknown>) as typeof redisClient;
+    const token =
+      config().KV_REST_API_TOKEN || config().UPSTASH_REDIS_TOKEN || config().REDIS_TOKEN;
+    // Upstash Redis constructor (casteado explícitamente; no requiere supresión de tipos)
+    redisClient = new (
+      mod.Redis as unknown as new (opts: Record<string, unknown>) => typeof redisClient
+    )({ url, token } as Record<string, unknown>) as typeof redisClient;
     return redisClient;
   } catch {
     return null;
@@ -66,18 +75,40 @@ export interface TokenClaims {
   tenantId: string;
   role: string;
   scope: string;
+  jti?: string;
+}
+
+/**
+ * Allowlist de hosts autorizados para egress server-side (anti-SSRF).
+ * Solo HTTPS, sin credenciales embebidas, sin hosts arbitrarios.
+ * El host de voz (VOICE_API_URL) se admite dinámicamente si está configurado.
+ */
+const UPSTREAM_ALLOWLIST: readonly string[] = ["generativelanguage.googleapis.com"];
+
+function isUpstreamAllowed(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  if (parsed.username !== "" || parsed.password !== "") return false;
+  const host = parsed.hostname.toLowerCase();
+  if (UPSTREAM_ALLOWLIST.includes(host)) return true;
+  try {
+    const voice = config().VOICE_API_URL;
+    if (voice && new URL(voice).hostname.toLowerCase() === host) return true;
+  } catch {
+    // Sin configuración válida: solo la allowlist estática.
+  }
+  return false;
 }
 
 export const SecuritySystem = {
   // --- LAYER 0: Secure IP Resolver (Trusted Proxy Guard) ---
   resolveClientIp(request: Request): string {
-    const trustedMode = ((): boolean => {
-      try {
-        return (config() as unknown as Record<string, unknown>).TRUSTED_PROXY_MODE === "true" || process.env.TRUSTED_PROXY_MODE === "true";
-      } catch {
-        return process.env.TRUSTED_PROXY_MODE === "true";
-      }
-    })();
+    const trustedMode = config().TRUSTED_PROXY_MODE === "true";
     // Only trust x-forwarded-for/cf-connecting-ip when behind trusted proxy (Vercel/Cloudflare)
     if (trustedMode) {
       const cfIp = request.headers.get("cf-connecting-ip");
@@ -132,7 +163,10 @@ export const SecuritySystem = {
   },
 
   // Distributed rate limit — uses Upstash Redis when available, falls back to memory
-  async checkRateLimitDistributed(ip: string, limit: number = 30): Promise<{ allowed: boolean; remaining: number }> {
+  async checkRateLimitDistributed(
+    ip: string,
+    limit: number = 30,
+  ): Promise<{ allowed: boolean; remaining: number }> {
     const redis = await getRedis();
     if (!redis) return this.checkRateLimit(ip, limit);
     try {
@@ -153,6 +187,7 @@ export const SecuritySystem = {
       sub: userId,
       aud: "Isabella S0 Gateway",
       exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour expiration
+      jti: crypto.randomUUID(), // P0-02: identificador único para validación de sesión
       tenantId,
       role,
       scope,
@@ -206,7 +241,7 @@ export const SecuritySystem = {
 
     const claims = verification.claims!;
     const scopesList = claims.scope.split(" ");
-    if (!scopesList.includes(requiredScope) && claims.role !== "SovereignOwner") {
+    if (!scopesList.includes(requiredScope)) {
       return {
         allowed: false,
         reason: `Ámbito insuficiente (Scope violation): Requiere '${requiredScope}'.`,
@@ -216,26 +251,41 @@ export const SecuritySystem = {
     return { allowed: true, claims };
   },
 
-  // --- LAYER 4: Hardened OWASP Secure Headers (No unsafe-eval, minimal unsafe-inline) ---
+  // --- LAYER 4: Hardened OWASP Secure Headers (No unsafe-eval, migration to nonce CSP) ---
   injectSecureHeaders(headers: Headers = new Headers()): Headers {
-    // Note: 'unsafe-inline' for script/style is required by Vite/TanStack hydration in dev; in prod consider nonce/hash with strict CSP.
-    // connect-src no longer includes Lovable — uses Gemini + self + Supabase.
+    // TanStack hydration still requires inline bootstrap. The enforced policy is
+    // deliberately transitional and the nonce policy is Report-Only until the
+    // framework emits matching per-request nonces.
     headers.set(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; media-src 'self' blob:; connect-src 'self' https://generativelanguage.googleapis.com https://*.supabase.co https://*.neon.tech; base-uri 'self'; form-action 'self';",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; media-src 'self' blob:; connect-src 'self' https://generativelanguage.googleapis.com https://*.supabase.co https://*.neon.tech; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
     );
     headers.set("X-Content-Type-Options", "nosniff");
-    headers.set("X-Frame-Options", "SAMEORIGIN");
+    headers.set("X-Frame-Options", "DENY");
     // Modern secure browsers ignore X-XSS-Protection or suffer from filter bypasses; 0 disables the legacy auditor safely
     headers.set("X-XSS-Protection", "0");
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-    headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+    headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
     headers.set("X-Permitted-Cross-Domain-Policies", "none");
+    headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    headers.set("Cross-Origin-Opener-Policy", "same-origin");
+    headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    headers.set(
+      "Content-Security-Policy-Report-Only",
+      "default-src 'self'; script-src 'self' 'nonce-{REQUEST_NONCE}'; style-src 'self' 'nonce-{STYLE_NONCE}'; img-src 'self' data: blob:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests;",
+    );
     return headers;
   },
 
-  // --- LAYER 5: Upstream Safe Fallback & Circuit Breaker ---
+  // --- LAYER 5: Upstream Allowlist + Safe Fallback & Circuit Breaker ---
+  UPSTREAM_ALLOWLIST,
+
+  isUpstreamAllowed,
+
   async fetchSafeUpstream(url: string, options: RequestInit): Promise<Response> {
+    if (!isUpstreamAllowed(url)) {
+      throw new Error(`[SovereignEgress] Host no autorizado para egress server-side: ${url}.`);
+    }
     return globalCircuitBreaker.execute(url, options);
   },
 

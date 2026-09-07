@@ -23,10 +23,7 @@ export function runSecurityTestSuite(): SecurityTestSuiteReport {
 
   // Test 1: RBAC guest prevention
   try {
-    const adminAllowedForGuest = identityHasPermission(
-      { role: "Guest" },
-      "system:admin",
-    );
+    const adminAllowedForGuest = identityHasPermission({ role: "Guest" }, "system:admin");
     results.push({
       name: "RBAC Guest Prevented from Admin",
       success: !adminAllowedForGuest,

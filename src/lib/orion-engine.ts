@@ -38,9 +38,7 @@ function sha256(input: string): string {
   return createHash("sha256").update(input).digest("hex");
 }
 
-export function createOrionEngine(
-  registry: ToolRegistry = createToolRegistry(),
-) {
+export function createOrionEngine(registry: ToolRegistry = createToolRegistry()) {
   return {
     listTools() {
       return registry.list();
@@ -92,7 +90,9 @@ export function createOrionEngine(
       try {
         const toolMeta = registry.lookup(call.toolName);
         const command = [
-          typeof call.args["command"] === "string" ? (call.args["command"] as string) : call.toolName,
+          typeof call.args["command"] === "string"
+            ? (call.args["command"] as string)
+            : call.toolName,
         ];
 
         const result: ISandboxExecutionResult = await sandbox.executeTask(

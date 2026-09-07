@@ -1,24 +1,24 @@
-/**
- * TIPOS DE MONETIZACIÓN (src/lib/monetization/types.ts)
- * -----------------------------------------------------------------
- * Contratos canónicos del protocolo de monetización de Isabella.
- * Modelo económico: el usuario es dueño de su monetización; la
- * plataforma retiene un 15% para infraestructura y la suscripción
- * activa desbloquea la capacidad de monetizar.
- *
- * Regla de reparto por defecto: 85% usuario / 15% plataforma.
- */
+export const MINIMUM_WITHDRAWAL_CENTS = 5000; // $50.00
+export const PLATFORM_FEE_BASIS_POINTS = 1500; // 15% platform fee on Net Margin
+export const USER_SCHARE_BASIS_POINTS = 8500; // 85% user share on Net Margin
+export const ESCROW_MATURATION_DAYS = 90; // 90 days to clear chargeback liability
 
-export const PLATFORM_FEE_BASIS_POINTS = 1500; // 15%
-export const USER_SCHARE_BASIS_POINTS = 8500; // 85%
-export const MINIMUM_WITHDRAWAL_CENTS = 5000; // $50.00 USD
-export const WITHDRAWAL_WINDOW_PER_MONTH = 1;
 export const MONETIZATION_SUBSCRIPTION_REQUIRED = true;
 
 export type MonetizationMethod =
-  "referral" | "education" | "territorial" | "evidence" | "professional_reference";
+  | "referral"
+  | "education"
+  | "territorial"
+  | "evidence"
+  | "professional_reference";
 
-export type EarningStatus = "pending" | "available" | "held" | "reversed" | "paid" | "disputed";
+export type EarningStatus =
+  | "pending" // In 90-day escrow
+  | "available" // Cleared escrow, ready for withdrawal
+  | "held" // Under fraud review
+  | "reversed" // Chargebacked (Loss shifted to user)
+  | "paid"
+  | "disputed";
 
 export type MonetizationBlockReason =
   | "NO_SUBSCRIPTION"
@@ -29,7 +29,8 @@ export type MonetizationBlockReason =
   | "ACTIVITY_REQUIREMENT_MISSING"
   | "FRAUD_REVIEW"
   | "SANCTIONED_ACCOUNT"
-  | "MINIMUM_NOT_REACHED";
+  | "MINIMUM_NOT_REACHED"
+  | "INSUFFICIENT_LIQUIDITY_POOL"; // Platform protection
 
 export interface MonetizationEligibilityInput {
   subscriptionActive: boolean;
@@ -51,18 +52,21 @@ export interface MonetizationEligibilityInput {
 export interface MonetizationEligibility extends MonetizationEligibilityInput {
   eligible: boolean;
   blockedReasons: MonetizationBlockReason[];
-  // Requisitos de actividad
   activityRequirementMet: boolean;
   balanceRequirementMet: boolean;
 }
 
-/** Desglose de reparto económico de un evento. */
+/** 
+ * Zero-Loss Revenue Split 
+ * Guarantees platform infrastructure costs are recovered first.
+ */
 export interface RevenueSplit {
   grossAmountCents: number;
+  infrastructureCostCents: number;
   platformFeeCents: number;
   refundReserveCents: number;
   communityShareCents: number;
-  netAmountCents: number;
+  netUserAmountCents: number;
 }
 
 export interface MonetizationEvent {
@@ -71,14 +75,15 @@ export interface MonetizationEvent {
   tenantIdHash: string;
   method: MonetizationMethod;
   grossAmountCents: number;
+  infrastructureCostCents: number;
   platformFeeCents: number;
   refundReserveCents: number;
   communityShareCents: number;
-  netAmountCents: number;
+  netUserAmountCents: number;
   status: EarningStatus;
   sourceHash: string;
   createdAt: string;
-  availableAt: string;
+  availableAt: string; // Will be createdAt + 90 days
   policyVersion: string;
   riskScore: number;
 }

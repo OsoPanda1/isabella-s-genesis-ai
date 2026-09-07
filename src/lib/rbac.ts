@@ -208,7 +208,14 @@ const ALL = Object.keys(PERMISSIONS) as Permission[];
  */
 const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   // Guest: acceso público no autenticado con privilegios mínimos. Puede chatear con Isabella (system:telemetry) y leer memoria propia.
-  Guest: ["memory:read:own", "ledger:read:own", "governance:read", "tool:list", "monetization:read", "system:telemetry"],
+  Guest: [
+    "memory:read:own",
+    "ledger:read:own",
+    "governance:read",
+    "tool:list",
+    "monetization:read",
+    "system:telemetry",
+  ],
   System: [
     "audit:write",
     "ledger:verify",

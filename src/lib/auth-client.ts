@@ -59,9 +59,12 @@ export async function ensureSessionToken(): Promise<string> {
   const existing = getSessionToken();
   if (existing) return existing;
 
-  const response = await fetch(`/api/db?action=oauth-url&redirect_uri=${encodeURIComponent(`${window.location.origin}/api/db?action=oauth-callback`)}`);
+  const response = await fetch(
+    `/api/db?action=oauth-url&redirect_uri=${encodeURIComponent(`${window.location.origin}/api/db?action=oauth-callback`)}`,
+  );
   const payload = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
-  if (!response.ok || !payload.url) throw new Error(payload.error || "ARGUS requiere una sesión OIDC válida.");
+  if (!response.ok || !payload.url)
+    throw new Error(payload.error || "ARGUS requiere una sesión OIDC válida.");
 
   return new Promise((resolve, reject) => {
     const popup = window.open(payload.url, "isabella-oidc", "width=520,height=720,resizable=yes");

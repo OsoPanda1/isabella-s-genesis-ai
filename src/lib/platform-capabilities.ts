@@ -5,12 +5,7 @@
  * authorization boundary or an unsupported production claim.
  */
 export type CapabilityStatus =
-  | "implemented"
-  | "verified"
-  | "experimental"
-  | "simulated"
-  | "planned"
-  | "unavailable";
+  "implemented" | "verified" | "experimental" | "simulated" | "shadow" | "planned" | "unavailable";
 
 export interface PlatformCapability {
   id: string;
@@ -22,14 +17,75 @@ export interface PlatformCapability {
 }
 
 export const PLATFORM_CAPABILITIES: readonly PlatformCapability[] = [
-  { id: "governance.crown", owner: "CROWN", status: "verified", productionSafe: true, evidence: ["src/lib/crown.ts", "src/lib/policy-engine.ts", "tests"] },
-  { id: "security.aegis-x", owner: "ARGUS", status: "implemented", productionSafe: true, evidence: ["src/lib/latam-aegis-x.ts", "src/routes/api/security.ts"] },
-  { id: "evidence.bookpi", owner: "BookPI", status: "implemented", productionSafe: true, evidence: ["src/lib/bookpi.ts", "src/lib/repositories/bookpi-repository.ts"] },
-  { id: "memory.pentacapa", owner: "MNEMOS", status: "implemented", productionSafe: true, evidence: ["src/lib/memory-engine.ts", "src/lib/repositories/memory-repository.ts"] },
-  { id: "tools.sandbox", owner: "ORION", status: "implemented", productionSafe: true, evidence: ["src/lib/sovereign-sandbox.ts", "src/lib/tool-registry.ts"] },
-  { id: "quantum.bridge", owner: "QUP", status: "experimental", productionSafe: false, evidence: ["quantum_utility_platform/", "src/lib/quantum*"], notes: "Simulator/fallback boundary; no QPU or quantum-safe certification is claimed." },
-  { id: "economy.ledger", owner: "BookPI", status: "implemented", productionSafe: false, evidence: ["src/lib/monetization/", "src/lib/bookpi.ts"], notes: "Requires production reconciliation, payout provider verification, and operational controls before live funds." },
-  { id: "federation.external", owner: "CROWN", status: "planned", productionSafe: false, evidence: [], notes: "Connectors require explicit provider contracts and trust roots." },
+  {
+    id: "governance.crown",
+    owner: "CROWN",
+    status: "verified",
+    productionSafe: true,
+    evidence: ["src/lib/crown.ts", "src/lib/policy-engine.ts", "tests"],
+  },
+  {
+    id: "security.aegis-x",
+    owner: "ARGUS",
+    status: "implemented",
+    productionSafe: true,
+    evidence: ["src/lib/latam-aegis-x.ts", "src/routes/api/security.ts"],
+  },
+  {
+    id: "evidence.bookpi",
+    owner: "BookPI",
+    status: "implemented",
+    productionSafe: true,
+    evidence: ["src/lib/bookpi.ts", "src/lib/repositories/bookpi-repository.ts"],
+  },
+  {
+    id: "memory.pentacapa",
+    owner: "MNEMOS",
+    status: "implemented",
+    productionSafe: true,
+    evidence: ["src/lib/memory-engine.ts", "src/lib/repositories/memory-repository.ts"],
+  },
+  {
+    id: "tools.sandbox",
+    owner: "ORION",
+    status: "implemented",
+    productionSafe: true,
+    evidence: ["src/lib/sovereign-sandbox.ts", "src/lib/tool-registry.ts"],
+  },
+  {
+    id: "quantum.bridge",
+    owner: "QUP",
+    status: "experimental",
+    productionSafe: false,
+    evidence: ["quantum_utility_platform/", "src/lib/quantum*"],
+    notes: "Simulator/fallback boundary; no QPU or quantum-safe certification is claimed.",
+  },
+  {
+    id: "cryptography.post-quantum-signatures",
+    owner: "QUP",
+    status: "simulated",
+    productionSafe: false,
+    evidence: ["src/lib/sovereign-audit.ts", "src/lib/qup-v3-engine.ts"],
+    notes:
+      "ML-DSA simulation is not cryptographic signature authority and must never be advertised as verified.",
+  },
+  {
+    id: "economy.ledger",
+    owner: "BookPI",
+    status: "implemented",
+    productionSafe: false,
+    evidence: ["src/lib/monetization/", "src/lib/bookpi.ts"],
+    notes:
+      "Requires production reconciliation, payout provider verification, and operational controls before live funds.",
+  },
+  {
+    id: "federation.external",
+    owner: "CROWN",
+    status: "planned",
+    productionSafe: false,
+    evidence: [],
+    notes: "Connectors require explicit provider contracts and trust roots.",
+  },
 ] as const;
 
 export function getCapability(id: string): PlatformCapability | undefined {
@@ -50,8 +106,21 @@ export function capabilitySummary() {
       summary[capability.status] += 1;
       return summary;
     },
-    { implemented: 0, verified: 0, experimental: 0, simulated: 0, planned: 0, unavailable: 0 },
+    {
+      implemented: 0,
+      verified: 0,
+      experimental: 0,
+      simulated: 0,
+      shadow: 0,
+      planned: 0,
+      unavailable: 0,
+    },
   );
 }
 
-export const CAPABILITY_REGISTRY = { list: PLATFORM_CAPABILITIES, get: getCapability, assertProduction: assertProductionCapability, summary: capabilitySummary };
+export const CAPABILITY_REGISTRY = {
+  list: PLATFORM_CAPABILITIES,
+  get: getCapability,
+  assertProduction: assertProductionCapability,
+  summary: capabilitySummary,
+};

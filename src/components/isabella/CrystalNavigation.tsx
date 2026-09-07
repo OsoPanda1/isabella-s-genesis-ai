@@ -28,11 +28,13 @@ import {
 export type NavTabId =
   | "terminal"
   | "cli"
+  | "governance"
   | "catalog"
   | "monetization"
   | "quantum"
   | "interfaces"
-  | "aegis";
+  | "aegis"
+  | "findarepo";
 
 export interface NavGroupItem {
   id: NavTabId;
@@ -133,9 +135,8 @@ function AccordionGroup({
                 onKeyDown={(e) => {
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
-                    const all = listRef.current?.querySelectorAll<HTMLButtonElement>(
-                      "[data-nav-item]",
-                    );
+                    const all =
+                      listRef.current?.querySelectorAll<HTMLButtonElement>("[data-nav-item]");
                     if (!all || all.length === 0) return;
                     let next = index;
                     if (e.key === "ArrowDown") next = (index + 1) % group.items.length;
@@ -195,9 +196,25 @@ export const NAV_GROUPS = (
           "bg-electric/15 text-electric border border-electric/30 shadow-[0_0_15px_-4px_rgba(112,102,249,0.3)]",
       },
       {
+        id: "governance",
+        label: "Gobernanza y Salud",
+        icon: <Layers className="size-4" />,
+        glow: "crystal-glow-electric",
+        activeClass:
+          "bg-electric/15 text-electric border border-electric/30 shadow-[0_0_15px_-4px_rgba(112,102,249,0.3)]",
+      },
+      {
         id: "interfaces",
         label: "Interfaces IA",
         icon: <Sparkles className="size-4" />,
+        glow: "crystal-glow-electric",
+        activeClass:
+          "bg-electric/15 text-electric border border-electric/30 shadow-[0_0_15px_-4px_rgba(112,102,249,0.3)]",
+      },
+      {
+        id: "findarepo",
+        label: "AI Agents Repos (Findarepo)",
+        icon: <TrendingUp className="size-4" />,
         glow: "crystal-glow-electric",
         activeClass:
           "bg-electric/15 text-electric border border-electric/30 shadow-[0_0_15px_-4px_rgba(112,102,249,0.3)]",

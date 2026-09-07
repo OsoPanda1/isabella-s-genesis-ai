@@ -13,7 +13,9 @@ export class ApiKeyAuthenticator {
    */
   public static async authenticate(
     request: Request,
-  ): Promise<{ success: true; principal: AuthenticatedPrincipal } | { success: false; error: string }> {
+  ): Promise<
+    { success: true; principal: AuthenticatedPrincipal } | { success: false; error: string }
+  > {
     const rawHeader =
       request.headers.get(this.HEADER_NAME) || request.headers.get("X-Isabella-API-Key");
 

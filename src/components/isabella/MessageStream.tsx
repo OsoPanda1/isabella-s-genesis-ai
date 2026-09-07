@@ -121,6 +121,11 @@ export function MessageStream({
                     <Meta label="TONO" value={m.decision.emotionalTone} />
                   </>
                 )}
+                {m.degraded === true && (
+                  <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-amber-400">
+                    Degradado · {m.provider ?? "origen alterno"} (no es inferencia LLM)
+                  </span>
+                )}
                 <span className="ml-auto font-mono text-[10px] text-muted-foreground">
                   {m.timestamp}
                 </span>

@@ -182,6 +182,11 @@ export interface HumanApproval {
   action: ActionKind;
   target?: string;
   revoked?: boolean;
+  tenantId?: string;
+  actorId?: string;
+  requestId?: string;
+  requestDigest?: string;
+  policyVersion?: string;
 }
 
 export interface CrownAuditEvent {
@@ -1237,6 +1242,13 @@ export function isApprovalValid(
   approval: HumanApproval | undefined,
   intent: IntentAssessment,
   now = new Date(),
+  expectedContext?: {
+    tenantId?: string;
+    actorId?: string;
+    requestId?: string;
+    requestDigest?: string;
+    policyVersion?: string;
+  },
 ): boolean {
   if (!approval || approval.revoked) {
     return false;
@@ -1258,6 +1270,45 @@ export function isApprovalValid(
     return false;
   }
 
+  // Cryptographic and metadata context binding validation
+  if (expectedContext) {
+    if (
+      approval.tenantId &&
+      expectedContext.tenantId &&
+      approval.tenantId !== expectedContext.tenantId
+    ) {
+      return false;
+    }
+    if (
+      approval.actorId &&
+      expectedContext.actorId &&
+      approval.actorId !== expectedContext.actorId
+    ) {
+      return false;
+    }
+    if (
+      approval.requestId &&
+      expectedContext.requestId &&
+      approval.requestId !== expectedContext.requestId
+    ) {
+      return false;
+    }
+    if (
+      approval.requestDigest &&
+      expectedContext.requestDigest &&
+      approval.requestDigest !== expectedContext.requestDigest
+    ) {
+      return false;
+    }
+    if (
+      approval.policyVersion &&
+      expectedContext.policyVersion &&
+      approval.policyVersion !== expectedContext.policyVersion
+    ) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -1266,6 +1317,13 @@ export function canInvokeTool(
   policy: ToolPolicy,
   identity: IdentityAssessment,
   approval?: HumanApproval,
+  expectedContext?: {
+    tenantId?: string;
+    actorId?: string;
+    requestId?: string;
+    requestDigest?: string;
+    policyVersion?: string;
+  },
 ): {
   allowed: boolean;
   reason: string;
@@ -1329,10 +1387,11 @@ export function canInvokeTool(
     signals: ["tool_request"],
   };
 
-  if (policy.requiresApproval && !isApprovalValid(approval, intent)) {
+  if (policy.requiresApproval && !isApprovalValid(approval, intent, new Date(), expectedContext)) {
     return {
       allowed: false,
-      reason: "La acción requiere una aprobación humana válida y vigente.",
+      reason:
+        "La acción requiere una aprobación humana válida y vigente vinculada al contexto actual.",
     };
   }
 

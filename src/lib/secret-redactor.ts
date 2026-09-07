@@ -56,10 +56,33 @@ export function createRedactor(extraValues: string[] = []): Redactor {
     .filter(Boolean);
 
   const dynamicValues: string[] = [];
+
+  // Lectura desde la configuración validada (§12). Sin process.env directo:
+  // el switch evita inyección de objetos y cfg es la única fuente.
+  const cfgRecord = cfg as unknown as Record<string, unknown>;
+  const secureEnvLookup = (key: string): string | undefined => {
+    switch (key) {
+      case "GEMINI_API_KEY":
+      case "AUTH_JWT_SECRET":
+      case "SUPABASE_SERVICE_ROLE_KEY":
+      case "SUPABASE_ANON_KEY":
+      case "SUPABASE_JWT_SECRET":
+      case "ENCRYPTION_MASTER_KEY":
+      case "BOOKPI_SIGNING_KEY":
+      case "CROWN_POLICY_SIGNING_KEY": {
+        const value = cfgRecord[key];
+        return typeof value === "string" && value.length > 0 ? value : undefined;
+      }
+      default:
+        return undefined;
+    }
+  };
+
   for (const key of [...BUILTIN_KEYS, ...extraKeys]) {
-    const value = process.env[key];
+    const value = secureEnvLookup(key);
     if (value) dynamicValues.push(value);
   }
+
   // Añade valores cargados vía secrets/config (degradación segura si faltan).
   try {
     for (const v of [secrets.jwtSecret(), secrets.aiGatewayKey(), secrets.encryptionMasterKey()]) {

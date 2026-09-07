@@ -1,5 +1,12 @@
 import { config } from "../config";
-import type { IRepository, RepositoryFactory, ApiKey, AuditEntry, Tenant, Session } from "./repository";
+import type {
+  IRepository,
+  RepositoryFactory,
+  ApiKey,
+  AuditEntry,
+  Tenant,
+  Session,
+} from "./repository";
 import { JsonRepositoryFactory } from "./adapters/json-adapter";
 import { SupabaseRepository } from "./adapters/supabase-adapter";
 
@@ -10,7 +17,11 @@ class ProductionRepositoryFactory implements RepositoryFactory {
   private isProduction(): boolean {
     try {
       const cfg = config();
-      return cfg.NODE_ENV === "production" || cfg.ISABELLA_RUNTIME_MODE === "production" || cfg.ISABELLA_RUNTIME_MODE === "staging";
+      return (
+        cfg.NODE_ENV === "production" ||
+        cfg.ISABELLA_RUNTIME_MODE === "production" ||
+        cfg.ISABELLA_RUNTIME_MODE === "staging"
+      );
     } catch {
       return process.env.NODE_ENV === "production";
     }
@@ -21,8 +32,11 @@ class ProductionRepositoryFactory implements RepositoryFactory {
       const cfg = config() as unknown as Record<string, unknown>;
       // Explicit flag — defaults to false in production
       if (typeof cfg.DURABLE_JSON_ALLOWED === "boolean") return cfg.DURABLE_JSON_ALLOWED as boolean;
-      if (typeof cfg.DURABLE_JSON_ALLOWED === "string") return (cfg.DURABLE_JSON_ALLOWED as string) === "true";
-    } catch {}
+      if (typeof cfg.DURABLE_JSON_ALLOWED === "string")
+        return (cfg.DURABLE_JSON_ALLOWED as string) === "true";
+    } catch (e) {
+      void e;
+    }
     const raw = process.env.DURABLE_JSON_ALLOWED;
     if (raw === "true") return true;
     if (raw === "false") return false;
@@ -30,17 +44,24 @@ class ProductionRepositoryFactory implements RepositoryFactory {
   }
 
   private assertProductionPersistence(): void {
-    if (this.isProduction() && !this.isDurableJsonAllowed()) {
-      // Supabase must be configured
-      const cfg = config();
-      if (!cfg.SUPABASE_URL || !cfg.SUPABASE_SERVICE_ROLE_KEY) {
-        throw new Error(
-          "[FATAL] Production persistence misconfigured: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY required and DURABLE_JSON_ALLOWED must not be used to bypass. Deployment blocker."
-        );
-      }
+    if (!this.isProduction()) {
+      return;
     }
-    if (this.isProduction() && this.isDurableJsonAllowed()) {
-      throw new Error("[FATAL] JSON persistence forbidden in production: DURABLE_JSON_ALLOWED=false required. Use Supabase/Postgres.");
+
+    if (this.isDurableJsonAllowed()) {
+      throw new Error(
+        "[FATAL] JSON persistence is forbidden in staging/production. Set DURABLE_JSON_ALLOWED=false.",
+      );
+    }
+
+    const cfg = config();
+    const hasTenantScopedSupabase = Boolean(cfg.SUPABASE_URL && cfg.AUTH_JWT_SECRET);
+    const hasPostgres = Boolean(cfg.DATABASE_URL);
+
+    if (!hasTenantScopedSupabase && !hasPostgres) {
+      throw new Error(
+        "[FATAL] Production persistence misconfigured. Configure either tenant-scoped Supabase (SUPABASE_URL + AUTH_JWT_SECRET) or DATABASE_URL for the dedicated PostgreSQL authentication repositories.",
+      );
     }
   }
 
@@ -54,11 +75,13 @@ class ProductionRepositoryFactory implements RepositoryFactory {
     return repo;
   }
 
-  getAdapter<T extends { id: string }>(type: "supabase" | "neon" | "redis", _schema?: string): IRepository<T> {
+  getAdapter<T extends { id: string }>(type: "supabase" | "neon" | "redis"): IRepository<T> {
     if (type === "supabase") return this.getSupabaseRepo<T>("supabase");
     // Neon/redis not yet implemented — fail closed in production
     if (this.isProduction()) {
-      throw new Error(`[FATAL] Adapter ${type} not implemented for production — deployment blocker`);
+      throw new Error(
+        `[FATAL] Adapter ${type} not implemented for production — deployment blocker`,
+      );
     }
     return new JsonRepositoryFactory().getAdapter<T>(type);
   }

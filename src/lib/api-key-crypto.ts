@@ -2,46 +2,72 @@ import * as crypto from "node:crypto";
 import { secrets } from "./secrets";
 
 /**
- * SERVICIO CRIPTOGRÁFICO DE API KEYS
- * Responsabilidad exclusiva: generación de entropía, hashing y verificación de firmas.
+ * SERVICIO CRIPTOGRÁFICO DE API KEYS Y HARDENING (7-Capas)
+ * Arquitectura:
+ * 1. Gateway Entropy (RandomBytes)
+ * 2. Identity Prefixing (Prefix)
+ * 3. Sovereign Salting (Per-key unique salt)
+ * 4. High-Cost KDF (PBKDF2 simulado en crypto)
+ * 5. Env-bound Master Key HMAC (Server-side constraint)
+ * 6. Constant-Time Verification (Timing-attack resilience)
+ * 7. Key Rotation Readiness (Format versioning)
  */
 export class ApiKeyCrypto {
+  private static readonly ITERATIONS = 100000;
+  private static readonly KEYLEN = 64;
+  private static readonly DIGEST = "sha512";
+  private static readonly FORMAT_VERSION = "v7"; // 7-Layer Format
+
   /**
-   * Genera un prefijo corto de 8 caracteres para búsquedas e identificación de llave.
+   * Genera un prefijo corto para búsquedas e identificación de llave.
    */
   public static generatePrefix(): string {
-    return crypto.randomBytes(4).toString("hex"); // 8 chars
+    return crypto.randomBytes(6).toString("hex");
   }
 
   /**
-   * Genera un secreto aleatorio de alta entropía (32 bytes = 64 caracteres en hexadecimal)
+   * Genera un secreto aleatorio de alta entropía.
    */
   public static generateSecret(): string {
-    return crypto.randomBytes(32).toString("hex");
+    return crypto.randomBytes(48).toString("base64url");
   }
 
   /**
-   * Calcula un hash HMAC-SHA256 usando el secreto maestro centralizado.
-   * Esto previene que una filtración de base de datos permita reconstruir las llaves.
+   * Calcula un hash criptográfico de 7 capas sobre un secreto en claro.
    */
   public static hashSecret(secret: string): string {
+    const salt = crypto.randomBytes(16).toString("hex");
     const masterKey = secrets.apiKeyHashSecret();
-    return crypto.createHmac("sha256", masterKey).update(secret).digest("hex");
+    const boundSecret = crypto.createHmac("sha512", masterKey).update(secret).digest("hex");
+    const derivedKey = crypto
+      .pbkdf2Sync(boundSecret, salt, this.ITERATIONS, this.KEYLEN, this.DIGEST)
+      .toString("hex");
+    return `${this.FORMAT_VERSION}.${salt}.${derivedKey}`;
   }
 
   /**
-   * Compara el secreto ingresado con el hash guardado de forma constante para evitar ataques de temporización (timing attacks).
+   * Verifica usando Constant-Time Verification reconstruyendo la pirámide criptográfica.
    */
   public static verifySecret(secret: string, storedHash: string): boolean {
-    const computedHash = this.hashSecret(secret);
+    const parts = storedHash.split(".");
+    if (parts.length !== 3) {
+      return false; // Legacy o formato inválido
+    }
+    const [version, salt, storedDerivedKey] = parts;
+    if (version !== this.FORMAT_VERSION) {
+      return false;
+    }
+    const masterKey = secrets.apiKeyHashSecret();
+    const boundSecret = crypto.createHmac("sha512", masterKey).update(secret).digest("hex");
+    const computedDerivedKey = crypto
+      .pbkdf2Sync(boundSecret, salt, this.ITERATIONS, this.KEYLEN, this.DIGEST)
+      .toString("hex");
 
-    const computedBuf = Buffer.from(computedHash, "hex");
-    const storedBuf = Buffer.from(storedHash, "hex");
-
+    const computedBuf = Buffer.from(computedDerivedKey, "hex");
+    const storedBuf = Buffer.from(storedDerivedKey, "hex");
     if (computedBuf.length !== storedBuf.length) {
       return false;
     }
-
     return crypto.timingSafeEqual(computedBuf, storedBuf);
   }
 }

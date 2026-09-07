@@ -9,8 +9,6 @@ import type {
   Session,
   RepositoryError,
   RepositoryFactory,
-  ReadOptions,
-  WriteOptions,
 } from "../repository";
 
 const PERSISTENCE_DIR = path.join(process.cwd(), "isabella_data");
@@ -22,14 +20,20 @@ const FILES: Record<string, string> = {
 };
 
 function assertJsonAllowed(): void {
-  const isProd = process.env.NODE_ENV === "production" || process.env.ISABELLA_RUNTIME_MODE === "production" || process.env.ISABELLA_RUNTIME_MODE === "staging";
+  const isProd =
+    process.env.NODE_ENV === "production" ||
+    process.env.ISABELLA_RUNTIME_MODE === "production" ||
+    process.env.ISABELLA_RUNTIME_MODE === "staging";
   const allowed = process.env.DURABLE_JSON_ALLOWED === "true";
   if (isProd && !allowed) {
-    throw Object.assign(new Error("[FATAL] JSON persistence forbidden in production — DURABLE_JSON_ALLOWED=false"), {
-      code: "REPOSITORY_FORBIDDEN",
-      statusCode: 500,
-      retryable: false,
-    });
+    throw Object.assign(
+      new Error("[FATAL] JSON persistence forbidden in production — DURABLE_JSON_ALLOWED=false"),
+      {
+        code: "REPOSITORY_FORBIDDEN",
+        statusCode: 500,
+        retryable: false,
+      },
+    );
   }
 }
 
@@ -96,7 +100,7 @@ export class JsonFileRepository<T extends { id: string }> implements IRepository
     assertJsonAllowed();
   }
 
-  async create(tenantId: string, data: Partial<T>, _options?: WriteOptions): Promise<T> {
+  async create(tenantId: string, data: Partial<T>): Promise<T> {
     assertJsonAllowed();
     if (!tenantId) throw toRepositoryError(new Error("tenantId required for create"));
     const items = load<T>(this.type);
@@ -114,7 +118,7 @@ export class JsonFileRepository<T extends { id: string }> implements IRepository
     return record;
   }
 
-  async read(tenantId: string, id: string, _options?: ReadOptions): Promise<T | null> {
+  async read(tenantId: string, id: string): Promise<T | null> {
     assertJsonAllowed();
     const items = load<T>(this.type);
     const found = items.find((r) => r.id === id && isTenantIsolated(r, tenantId)) ?? null;
@@ -137,17 +141,25 @@ export class JsonFileRepository<T extends { id: string }> implements IRepository
     if (_filters) {
       result = result.filter((r) =>
         Object.entries(_filters).every(([k, v]) => {
-          const rv = (r as Record<string, unknown>)[k] ?? (r as Record<string, unknown>)[toSnake(k)] ?? (r as Record<string, unknown>)[toCamel(k)];
+          const rv =
+            (r as Record<string, unknown>)[k] ??
+            (r as Record<string, unknown>)[toSnake(k)] ??
+            (r as Record<string, unknown>)[toCamel(k)];
           return rv === v;
         }),
       );
     }
     const total = result.length;
-    const sliced = offset !== undefined ? result.slice(offset, offset + (limit ?? total)) : limit !== undefined ? result.slice(0, limit) : result;
+    const sliced =
+      offset !== undefined
+        ? result.slice(offset, offset + (limit ?? total))
+        : limit !== undefined
+          ? result.slice(0, limit)
+          : result;
     return { items: sliced, total };
   }
 
-  async update(tenantId: string, id: string, data: Partial<T>, _options?: WriteOptions): Promise<T> {
+  async update(tenantId: string, id: string, data: Partial<T>): Promise<T> {
     assertJsonAllowed();
     if (!tenantId) throw toRepositoryError(new Error("tenantId required for update"));
     const items = load<T>(this.type);
@@ -178,7 +190,14 @@ export class JsonFileRepository<T extends { id: string }> implements IRepository
   async findByPrefix(prefix: string): Promise<T | null> {
     assertJsonAllowed();
     const items = load<T>(this.type);
-    return (items.find((r) => (r as Record<string, unknown>).keyPrefix === prefix || (r as Record<string, unknown>).prefix === prefix || (r as Record<string, unknown>).key_prefix === prefix) as T | undefined) ?? null;
+    return (
+      (items.find(
+        (r) =>
+          (r as Record<string, unknown>).keyPrefix === prefix ||
+          (r as Record<string, unknown>).prefix === prefix ||
+          (r as Record<string, unknown>).key_prefix === prefix,
+      ) as T | undefined) ?? null
+    );
   }
 
   async audit(entry: AuditEntry): Promise<void> {
@@ -193,17 +212,12 @@ export class JsonFileRepository<T extends { id: string }> implements IRepository
     try {
       assertJsonAllowed();
       ensureDir();
-      const fp = filePath(this.type);
-      // El almacén se crea de forma perezosa: si aún no hay escrituras, lo inicializamos vacío
-      // en lugar de reportar el nodo como no disponible.
-      if (!fs.existsSync(fp)) save<T>(this.type, []);
-      fs.accessSync(fp);
+      fs.accessSync(filePath(this.type));
       return { ok: true, latencyMs: performance.now() - start };
     } catch {
       return { ok: false, latencyMs: performance.now() - start };
     }
   }
-
 }
 
 function toSnake(key: string): string {
@@ -213,18 +227,20 @@ function toCamel(key: string): string {
   return key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 }
 
+type BaseRecord = { id: string; [key: string]: unknown };
+
 export class JsonRepositoryFactory implements RepositoryFactory {
-  private readonly adapters = new Map<string, JsonFileRepository<any>>();
+  private readonly adapters = new Map<string, JsonFileRepository<BaseRecord>>();
 
   private adapter<T extends { id: string }>(type: string): JsonFileRepository<T> {
     const existing = this.adapters.get(type) as unknown as JsonFileRepository<T> | undefined;
     if (existing) return existing;
     const a = new JsonFileRepository<T>(type);
-    this.adapters.set(type, a as unknown as JsonFileRepository<any>);
+    this.adapters.set(type, a as unknown as JsonFileRepository<BaseRecord>);
     return a;
   }
 
-  getAdapter<T extends { id: string }>(type: "supabase" | "neon" | "redis", _schema?: string): IRepository<T> {
+  getAdapter<T extends { id: string }>(type: "supabase" | "neon" | "redis"): IRepository<T> {
     assertJsonAllowed();
     return new JsonFileRepository<T>(type);
   }

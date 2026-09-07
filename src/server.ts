@@ -50,32 +50,56 @@ function isH3SwallowedErrorBody(body: string): boolean {
 }
 
 // Seguridad: headers OWASP mínimos que deben estar presentes en toda respuesta.
-function withSecurityHeaders(response: Response): Response {
+// El CSP estricto se habilita primero en Report-Only: TanStack Start todavía
+// emite bootstrap inline sin nonce. El header aplicado mantiene compatibilidad,
+// mientras las violaciones recolectadas impiden afirmar que ya existe un CSP
+// estricto en producción.
+export function withSecurityHeaders(response: Response): Response {
   const headers = new Headers(response.headers);
   const setIfMissing = (name: string, value: string) => {
     if (!headers.has(name)) headers.set(name, value);
   };
   setIfMissing("X-Content-Type-Options", "nosniff");
-  setIfMissing("Referrer-Policy", "no-referrer");
+  setIfMissing("X-Frame-Options", "DENY");
+  setIfMissing("Referrer-Policy", "strict-origin-when-cross-origin");
   // Modern standard: disable the legacy XSS auditor to avoid filter bypass exploits, relying strictly on strong CSP
   setIfMissing("X-XSS-Protection", "0");
   setIfMissing("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  setIfMissing("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  setIfMissing("Cross-Origin-Opener-Policy", "same-origin");
+  setIfMissing("Cross-Origin-Resource-Policy", "same-origin");
   setIfMissing(
     "Content-Security-Policy",
     [
       "default-src 'self'",
-      "img-src 'self' data: blob: https:",
-      // El hidratado de TanStack Start inyecta scripts/estilos inline en el HTML SSR.
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' data: https://fonts.gstatic.com",
+      "img-src 'self' data: blob:",
+      "style-src 'self'",
+      // TanStack Start emits the serialized hydration bootstrap inline; without it
+      // the browser cannot find window.$_TSR and the app remains blank.
       "script-src 'self' 'unsafe-inline'",
-      "connect-src 'self' https: wss:",
-      "media-src 'self' blob: data:",
+      "connect-src 'self' https://generativelanguage.googleapis.com https://*.supabase.co https://*.neon.tech",
+      "object-src 'none'",
       "base-uri 'self'",
+      "frame-ancestors 'none'",
       "form-action 'self'",
+      "upgrade-insecure-requests",
     ].join("; "),
   );
-
+  setIfMissing(
+    "Content-Security-Policy-Report-Only",
+    [
+      "default-src 'self'",
+      "script-src 'self' 'nonce-{REQUEST_NONCE}'",
+      "style-src 'self' 'nonce-{STYLE_NONCE}'",
+      "img-src 'self' data: blob:",
+      "font-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "upgrade-insecure-requests",
+    ].join("; "),
+  );
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -120,6 +144,11 @@ async function fetchWithRequestChain(
 
     // Verifica integridad del runtime (no aborta en desarrollo, solo informa)
     void ensureRuntimeReady(false);
+
+    // Refresh bounded by a short TTL and de-duplicated across concurrent
+    // requests; destructive paths still force a fresh hydrate themselves.
+    const { SovereignDB } = await import("./lib/sovereign-engine");
+    await SovereignDB.hydrate({ maxAgeMs: 5_000 });
 
     // 3. HANDLER — delega al router SSR
     const handler = await getServerEntry();

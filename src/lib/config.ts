@@ -45,6 +45,17 @@ export function loadConfig(source: RawEnv = process.env): Env {
 
   try {
     assertRequired(mode, source);
+    if (mode === "production" || mode === "staging") {
+      if (parsed.DURABLE_JSON_ALLOWED) {
+        throw new Error("DURABLE_JSON_ALLOWED debe ser false en modos no locales");
+      }
+      if (parsed.AUTH_DEV_SESSION_ENABLED || parsed.ALLOW_GUEST_CHAT) {
+        throw new Error("AUTH_DEV_SESSION_ENABLED y ALLOW_GUEST_CHAT deben estar desactivados");
+      }
+      if (!parsed.DATABASE_URL && !(parsed.SUPABASE_URL && parsed.AUTH_JWT_SECRET)) {
+        throw new Error("Se requiere autoridad durable: DATABASE_URL o Supabase con AUTH_JWT_SECRET");
+      }
+    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     loadError = msg;

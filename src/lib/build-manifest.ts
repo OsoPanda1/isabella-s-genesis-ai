@@ -52,7 +52,7 @@ export function computeEnvFingerprint(env: NodeJS.ProcessEnv = process.env): str
     env.PUBLIC_URL ?? "",
     env.LLM_DEFAULT_MODEL ?? "",
     env.CROWN_CONSTITUTION_VERSION ?? "",
-    env.BOOKPI_SIGNATURE_ALGORITHM ?? "NOT_IMPLEMENTED",
+    env.BOOKPI_SIGNATURE_ALGORITHM ?? "UNSIGNED_DEV",
   ];
   return hashText(parts.join("|"));
 }

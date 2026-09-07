@@ -1,57 +1,79 @@
-import { PLATFORM_FEE_BASIS_POINTS, USER_SCHARE_BASIS_POINTS, type RevenueSplit } from "./types";
+import { PLATFORM_FEE_BASIS_POINTS, type RevenueSplit } from "./types";
 
 /**
- * DESGLOSE DE REPARTO (src/lib/monetization/revenue.ts)
+ * ZERO-LOSS SOVEREIGN MONETIZATION MODEL
  * -----------------------------------------------------------------
- * Modelo económico de Isabella: el 100% de la monetización que genera
- * un usuario se reparte en 85% para el usuario y 15% para plataforma
- * (soporte de infraestructura). La suscripción activa desbloquea la
- * monetización; no reduce el reparto.
- *
- * La reserva antirreembolso (refundReserve) se retiene temporalmente
- * y se libera al pasar el periodo de maduración.
+ * To guarantee the platform NEVER suffers economic loss or funds payouts from
+ * its own capital:
+ * 1. Platform Infrastructure Costs (compute, token, egress) are deducted FIRST.
+ * 2. Revenue split applies ONLY to the Net Margin.
+ * 3. 100% of the Net Margin is split: Platform takes its fee (e.g. 15%), user/node takes the rest.
+ * 4. A strict Fraud/Refund Reserve (e.g. 10%) is held from the User's share for 90 days.
+ * 5. Payouts are exclusively funded from cleared, settled escrow.
  */
 
-export interface RevenueComputationInput {
-  grossAmountCents: number;
-  /** 0..1, qué fracción del total se reserva para reembolsos/contracargos */
-  refundReserveRatio?: number;
-  /** fracción comunitaria (0..1) para contenidos comunitarios, si aplica */
-  communityShareRatio?: number;
+export interface ZeroLossRevenueInput {
+  grossPaidCents: number;           // Total amount paid by the consumer upfront (Pre-funded)
+  infrastructureCostCents: number;  // Absolute cost incurred by the platform (AWS/GCP/Quantum backend)
+  refundReserveRatio: number;       // Ratio of user's profit held for chargeback windows (e.g. 0.10)
+  communityShareRatio: number;      // Ratio for territorial node community (e.g. 0.05)
 }
 
-export function splitRevenue(input: RevenueComputationInput): RevenueSplit {
-  const { grossAmountCents } = input;
-  if (grossAmountCents < 0) throw new Error("grossAmountCents no puede ser negativo");
+export function splitZeroLossRevenue(input: ZeroLossRevenueInput): RevenueSplit {
+  const { grossPaidCents, infrastructureCostCents, refundReserveRatio, communityShareRatio } = input;
 
-  const refundReserveCents = Math.round(grossAmountCents * (input.refundReserveRatio ?? 0));
-  const communityShareCents = Math.round(grossAmountCents * (input.communityShareRatio ?? 0));
+  if (grossPaidCents < 0) throw new Error("grossPaidCents cannot be negative");
+  if (infrastructureCostCents < 0) throw new Error("infrastructureCostCents cannot be negative");
+  
+  // 1. DEDUCT PLATFORM COSTS FIRST (Zero-Loss Guarantee)
+  const netMarginCents = grossPaidCents - infrastructureCostCents;
 
-  // Base tras reservas y comunidad
-  const distributable = grossAmountCents - refundReserveCents - communityShareCents;
-  if (distributable < 0) throw new Error("Las reservas no pueden exceder el monto bruto");
+  if (netMarginCents < 0) {
+    // If infrastructure costs exceeded gross (which should never happen due to upfront pricing),
+    // the platform takes a total loss, and there is $0 to distribute.
+    return {
+      grossAmountCents: grossPaidCents,
+      infrastructureCostCents,
+      platformFeeCents: 0,
+      refundReserveCents: 0,
+      communityShareCents: 0,
+      netUserAmountCents: 0,
+    };
+  }
 
-  const platformFeeCents = Math.round((distributable * PLATFORM_FEE_BASIS_POINTS) / 10_000);
-  const netAmountCents = distributable - platformFeeCents;
+  // 2. ALLOCATE PLATFORM FEE FROM NET MARGIN
+  const platformFeeCents = Math.round((netMarginCents * PLATFORM_FEE_BASIS_POINTS) / 10_000);
+  const totalPlatformTakeCents = infrastructureCostCents + platformFeeCents;
+
+  // 3. ALLOCATE COMMUNITY SHARE
+  const communityShareCents = Math.round(netMarginCents * communityShareRatio);
+
+  // 4. CALCULATE USER PROFIT (Remaining)
+  const userGrossProfitCents = netMarginCents - platformFeeCents - communityShareCents;
+
+  // 5. WITHHOLD ESCROW (FRAUD/CHARGEBACK PROTECTION)
+  // The reserve is taken ONLY from the user's profit. The platform secures its costs & fees immediately.
+  const refundReserveCents = Math.round(userGrossProfitCents * refundReserveRatio);
+  const netUserAmountCents = userGrossProfitCents - refundReserveCents;
 
   return {
-    grossAmountCents,
+    grossAmountCents: grossPaidCents,
+    infrastructureCostCents,
     platformFeeCents,
     refundReserveCents,
     communityShareCents,
-    netAmountCents,
+    netUserAmountCents,
   };
 }
 
-/** Verifica la invariante de reparto: bruto = plataforma + usuario + reservas + comunidad. */
-export function verifyRevenueSplit(split: RevenueSplit): boolean {
+/** Verifies the invariant: Total Gross = Infrastructure + PlatformFee + Community + UserReserve + UserNet */
+export function verifyZeroLossSplit(split: RevenueSplit): boolean {
   return (
     split.grossAmountCents ===
+    split.infrastructureCostCents +
     split.platformFeeCents +
-      split.netAmountCents +
-      split.refundReserveCents +
-      split.communityShareCents
+    split.communityShareCents +
+    split.refundReserveCents +
+    split.netUserAmountCents
   );
 }
-
-export { PLATFORM_FEE_BASIS_POINTS, USER_SCHARE_BASIS_POINTS };

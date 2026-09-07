@@ -1,23 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  FolderOpen,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Download, FolderOpen } from "lucide-react";
 import CinematicIntro from "@/components/isabella/CinematicIntro";
 import { CommandLine } from "@/components/isabella/CommandLine";
 import { MessageStream } from "@/components/isabella/MessageStream";
 import { RightRails } from "@/components/isabella/RightRails";
 import { Starfield } from "@/components/isabella/Starfield";
-import { CrystalNavigation, NAV_GROUPS, type NavTabId } from "@/components/isabella/CrystalNavigation";
+import {
+  CrystalNavigation,
+  NAV_GROUPS,
+  type NavTabId,
+} from "@/components/isabella/CrystalNavigation";
 import { ApiCatalogExplorer } from "@/components/isabella/ApiCatalogExplorer";
 import { TerminalView } from "@/components/isabella/TerminalView";
 import { MonetizationDashboard } from "@/components/isabella/MonetizationDashboard";
 import { QuantumUtilityDashboard } from "@/components/isabella/QuantumUtilityDashboard";
 import { AiInterfacesHub } from "@/components/isabella/AiInterfacesHub";
 import { LatamAegisDashboard } from "@/components/isabella/LatamAegisDashboard";
+import { CognitiveStatusDashboard } from "@/components/isabella/CognitiveStatusDashboard";
+import { FindarepoDashboard } from "@/components/isabella/FindarepoDashboard";
 import { useIsabella } from "@/lib/useIsabella";
 
 const TITLE = "Isabella Villaseñor AI — Terminal Cognitivo C.R.O.W.N.";
@@ -49,34 +50,40 @@ const INTRO_SEEN_KEY = "isabella.entry.intro.v1";
 
 function Index() {
   const [introDone, setIntroDone] = useState(false);
+  const [clientReady, setClientReady] = useState(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    let seen = false;
+    setClientReady(true);
     try {
-      seen = window.sessionStorage.getItem(INTRO_SEEN_KEY) === "1";
+      setIntroDone(window.sessionStorage.getItem(INTRO_SEEN_KEY) === "1");
     } catch {
-      seen = false;
+      setIntroDone(false);
     }
-    if (seen) setIntroDone(true);
   }, []);
 
-  const handleIntroComplete = () => {
+  const handleIntroComplete = useCallback(() => {
     try {
       window.sessionStorage.setItem(INTRO_SEEN_KEY, "1");
     } catch {
       /* almacenamiento no disponible: la intro se re-muestra en la próxima carga */
     }
     setIntroDone(true);
-  };
+  }, []);
 
-  // Durante la intro no se monta la interfaz de Isabella (evita llamadas/APIs
-  // bajo el splash). En SSR no existe sesión de cliente: se muestra la intro,
-  // lo que mantiene consistente el primer render con la hidratación.
-  if (!introDone) {
-    return <CinematicIntro onComplete={handleIntroComplete} />;
+  if (!clientReady) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <div className="text-center" role="status" aria-live="polite">
+          <div className="mx-auto mb-4 size-10 animate-pulse rounded-full border border-electric/40 bg-electric/10" />
+          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
+            Sincronizando núcleo C.R.O.W.N.
+          </p>
+        </div>
+      </main>
+    );
   }
 
+  if (!introDone) return <CinematicIntro onComplete={handleIntroComplete} />;
   return <IsabellaInterface />;
 }
 
@@ -92,7 +99,9 @@ function IsabellaInterface() {
     // deep-link hash para trazabilidad y bookmark
     try {
       window.history.replaceState(null, "", `#monetization-${subTab}`);
-    } catch {}
+    } catch (e) {
+      void e;
+    }
   };
 
   // Sidebar State for 3-part retractable accordions
@@ -118,7 +127,6 @@ function IsabellaInterface() {
     void isabella.send(text);
   };
 
-
   return (
     <div className="relative min-h-screen flex bg-background text-foreground transition-all duration-300">
       {/* Starfield atmosférico de fondo (1.000 micro-estrellas marfil/platino) */}
@@ -140,7 +148,7 @@ function IsabellaInterface() {
               {/* Outer logo glowing ring */}
               <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-electric via-iris to-pearl opacity-40 blur-md group-hover:opacity-75 transition-all duration-500" />
               <img
-                src="/logo-isabella.jpeg"
+                src="/favicon.png"
                 alt="Isabella Logo"
                 className={`relative rounded-xl border border-border/40 object-cover transition-all duration-300 ${
                   isSidebarOpen ? "size-18" : "size-10"
@@ -215,10 +223,12 @@ function IsabellaInterface() {
                 <p className="text-[9.5px] text-muted-foreground font-mono mt-0.5 uppercase tracking-widest">
                   {activeTab === "terminal" && `Conexión Activa: ${isabella.preset.name}`}
                   {activeTab === "cli" && "Consola Retro Directa"}
+                  {activeTab === "governance" && "Gobernanza y Salud de Módulos Cognitivos"}
                   {activeTab === "catalog" && "Gobernanza de APIs e Invocaciones"}
                   {activeTab === "monetization" && "Tablero de Consumo Soberano"}
                   {activeTab === "quantum" && "Optimización y Transpilación Cuántica (qup)"}
                   {activeTab === "aegis" && "Muro de Defensa Activa LATAM AEGIS-X"}
+                  {activeTab === "findarepo" && "Ranking Global de Agentes (Findarepo)"}
                 </p>
               </div>
             </div>
@@ -303,6 +313,12 @@ function IsabellaInterface() {
             </div>
           )}
 
+          {activeTab === "governance" && (
+            <div className="animate-rise max-w-[1300px] mx-auto">
+              <CognitiveStatusDashboard />
+            </div>
+          )}
+
           {activeTab === "catalog" && (
             <div className="animate-rise max-w-[1300px] mx-auto crystal-glow-crown rounded-3xl overflow-hidden">
               <ApiCatalogExplorer />
@@ -330,6 +346,12 @@ function IsabellaInterface() {
           {activeTab === "aegis" && (
             <div className="animate-rise max-w-[1300px] mx-auto crystal-glow-crown rounded-3xl overflow-hidden">
               <LatamAegisDashboard />
+            </div>
+          )}
+
+          {activeTab === "findarepo" && (
+            <div className="animate-rise max-w-[1300px] mx-auto crystal-glow-electric rounded-3xl overflow-hidden h-[85vh]">
+              <FindarepoDashboard />
             </div>
           )}
         </main>

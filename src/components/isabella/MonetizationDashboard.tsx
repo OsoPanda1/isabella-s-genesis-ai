@@ -161,13 +161,13 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
     "bookpi:append",
   ]);
 
-  // Special Upgrade Items (5 new upgrades)
-  const [upgrades, setUpgrades] = useState<UpgradeItem[]>([
+  // Special Upgrade Items (roadmap: sin setter porque no hay compra ni activación)
+  const [upgrades] = useState<UpgradeItem[]>([
     {
       id: "pqc_dilithium",
       name: "Sello Contable Post-Cuántico (PQC)",
       description:
-        "Activa la firma de transacciones BookPI mediante un simulador de esquemas resistentes a computación cuántica (Dilithium/Kyber).",
+        "Objetivo roadmap: firma de transacciones BookPI con esquemas resistentes a computación cuántica (Dilithium/Kyber) cuando el runtime disponga de primitivas reales. Hoy el sello de autoridad es HMAC-SHA3-512.",
       cost: 45.0,
       category: "Criptografía",
       active: false,
@@ -187,7 +187,7 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
       id: "hallucination_filter",
       name: "Filtro Anti-Alucinaciones SOPHIA",
       description:
-        "Evalúa las respuestas de Isabella contra el canon territorial reduciendo las respuestas ambiguas u incorrectas en un 98.4%.",
+        "Objetivo roadmap: evaluar las respuestas de Isabella contra el canon territorial. Sin medición publicada: no se declara ningún porcentaje de efectividad.",
       cost: 30.0,
       category: "Alineación IA",
       active: true,
@@ -314,6 +314,10 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
   const [planHdrMultiplier, setPlanHdrMultiplier] = useState(1.0); // 1.0 for local node, 1.4 for cloud redundancy
 
   // --- REINFORCED MONETIZATION STATE ---
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [monetizationAccount, setMonetizationAccount] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [eligibilityInfo, setEligibilityInfo] = useState<any>(null);
   const [earnedBalance, setEarnedBalance] = useState(12.45);
   const [simulationLogs, setSimulationLogs] = useState<string[]>([
     "[SISTEMA] Motor de Monetización Inicializado. Esperando actividades...",
@@ -408,11 +412,98 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
           const hData = await headsRes.json();
           setCognitiveHeads(hData.heads);
         }
+
+        // 5. Fetch Monetization status
+        const monRes = await fetch(`/api/db?action=monetization-get`, {
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (monRes.ok) {
+          const mData = await monRes.json();
+          setMonetizationAccount(mData.account);
+          setEligibilityInfo(mData.eligibility);
+          setEarnedBalance(mData.account.earnedBalanceCents / 100);
+        }
       }
     } catch (err) {
       console.error("No se pudo conectar a la API soberana:", err);
     }
   }, [sessionToken]);
+
+  const handleUpdateMonetizationProfile = async (updates: Record<string, unknown>) => {
+    try {
+      const res = await fetch(`/api/db?action=monetization-update-profile`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        toast.success("Parámetros de elegibilidad actualizados en el servidor.");
+        void fetchDbState();
+      } else {
+        toast.error("Error al actualizar la elegibilidad en el servidor.");
+      }
+    } catch {
+      toast.error("Fallo de red al conectar para actualizar elegibilidad.");
+    }
+  };
+
+  const handleExecuteMonetizationTask = async (task: string) => {
+    try {
+      const res = await fetch(`/api/db?action=monetization-execute-task`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({ task }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("¡Tarea registrada y micro-créditos acreditados en BookPI!");
+        void fetchDbState();
+      } else {
+        toast.error(data.error || "Fallo al ejecutar la tarea de monetización.");
+      }
+    } catch {
+      toast.error("Error de comunicación de red al procesar tarea.");
+    }
+  };
+
+  const handleRequestWithdrawal = async (key?: string) => {
+    try {
+      const res = await fetch(`/api/db?action=monetization-request-withdrawal`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({ idempotencyKey: key }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(
+          `¡Retiro de $${(earnedBalance * 0.85).toFixed(2)} USD procesado con éxito (85/15)!`,
+        );
+        void fetchDbState();
+      } else {
+        if (data.code === "WITHDRAWAL_UNDER_REVIEW") {
+          toast.warning(
+            "Fallo en la revisión: Retiro bajo retención preventiva por sospecha de fraude.",
+          );
+        } else if (data.code === "MINIMUM_WITHDRAWAL_NOT_REACHED") {
+          toast.error("El saldo de retiro no alcanza el mínimo de $50.00 USD.");
+        } else {
+          toast.error(`Error de retiro: ${data.code || "desconocido"}`);
+        }
+        void fetchDbState();
+      }
+    } catch {
+      toast.error("Fallo de red al solicitar retiro contable.");
+    }
+  };
 
   useEffect(() => {
     void fetchDbState();
@@ -528,9 +619,7 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
     // Los roles NO pueden cambiarse acuñando tokens por cuenta propia: la
     // identidad la emite únicamente el servidor mediante flujos autorizados
     // (provision-owner con token de bootstrap o IDP OIDC/Supabase).
-    toast.info(
-      "El cambio de identidad requiere un flujo autorizado (OIDC o provisionamiento).",
-    );
+    toast.info("El cambio de identidad requiere un flujo autorizado (OIDC o provisionamiento).");
   };
 
   const handleExecuteSandbox = async () => {
@@ -598,15 +687,38 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
     console.log("Onboarding complete for user:", data.username);
   };
 
-  const handleGenerateApiKey = () => {
+  const handleGenerateApiKey = async () => {
     if (!newKeyName.trim()) return;
-    const truncated = `isa_live_` + Math.random().toString(36).slice(2, 10) + `_key`;
-    setGeneratedKeys((prev) => [
-      { key: truncated, name: newKeyName, scopes: [...selectedScopes] },
-      ...prev,
-    ]);
-    setNewKeyName("");
-    toast.success(`Clave API empresarial '${newKeyName}' generada con éxito.`);
+    try {
+      // Emisión real: el servidor genera, hashea y persiste la credencial
+      // (ApiKeyService). Aquí nunca se inventa una clave.
+      const res = await fetch(`/api/db?action=create-api-key`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({
+          name: newKeyName.trim(),
+          role: "Operator",
+          scopes: selectedScopes,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(`Emisión denegada: ${data.error ?? "sin respuesta del servidor"}`);
+        return;
+      }
+      const issued = typeof data.key === "string" ? data.key : (data.key?.apiKey ?? "");
+      setGeneratedKeys((prev) => [
+        { key: String(issued), name: newKeyName, scopes: [...selectedScopes] },
+        ...prev,
+      ]);
+      setNewKeyName("");
+      toast.success(`Clave API '${newKeyName}' emitida por el servidor.`);
+    } catch {
+      toast.error("Error emitiendo la clave API.");
+    }
   };
 
   const handleToggleScope = (scope: string) => {
@@ -615,36 +727,14 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
     );
   };
 
-  // Special Upgrade purchase simulator
+  // Mejoras en roadmap: no existe backend que las active ni cobro asociado.
+  // No se muta saldo ni se escribe en el ledger. El botón informa el estado.
   const handleToggleUpgrade = (upgradeId: string) => {
-    setUpgrades((prev) =>
-      prev.map((up) => {
-        if (up.id === upgradeId) {
-          const nextState = !up.active;
-          if (nextState) {
-            // Check if activeTenant has enough budget
-            if (activeTenant && activeTenant.quotaBalance >= up.cost) {
-              // Deduct balance simulated
-              activeTenant.quotaBalance -= up.cost;
-              toast.success(`¡Mejora '${up.name}' adquirida e integrada al orquestador!`);
-              // Register transaction in ledger
-              void handleSimulateCreditUsage(
-                `Mejora de Criptosistema: ${up.name}`,
-                "skills",
-                up.cost.toFixed(2),
-              );
-              return { ...up, active: true };
-            } else {
-              toast.error("Fondos insuficientes en la cuota del tenant para adquirir esta mejora.");
-              return up;
-            }
-          } else {
-            toast.info(`Mejora '${up.name}' desactivada del motor.`);
-            return { ...up, active: false };
-          }
-        }
-        return up;
-      }),
+    const up = upgrades.find((u) => u.id === upgradeId);
+    toast.info(
+      up
+        ? `'${up.name}' está en roadmap (requiere backend real; sin cobro ni activación).`
+        : "Mejora en roadmap (requiere backend real).",
     );
   };
 
@@ -711,44 +801,34 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
         routingPath: path,
       });
       setIsRoutingSimulating(false);
-      toast.success("¡Simulación de enrutamiento neural de 12 núcleos completada!");
+      toast.success("Simulación ilustrativa completada (no es enrutamiento real).");
     }, 1200);
   };
 
-  const usageStats = {
-    msgUsed:
-      activePlan === "personal"
-        ? 145
-        : activePlan === "pro"
-          ? 412
-          : activePlan === "enterprise"
-            ? 1890
-            : 14,
-    msgLimit:
+  // Uso real derivado del ledger del servidor: mensajes = bloques liquidados
+  // del tenant; tokens estimados con el mismo factor (×1200) que el servidor
+  // usa al escribir entradas. Límites = derechos del plan (constantes producto).
+  const usageStats = (() => {
+    const settled = ledger.filter((l) => l.status === "settled");
+    const msgUsed = settled.length;
+    const totalCost = settled.reduce((acc, l) => acc + (parseFloat(l.costDecimal) || 0), 0);
+    const tokensUsedEst = Math.round(totalCost * 1200);
+    const msgLimit =
       activePlan === "personal"
         ? 5000
         : activePlan === "pro"
           ? 20000
           : activePlan === "enterprise"
             ? 100000
-            : 50,
-    tokensRemaining:
-      activePlan === "personal"
-        ? 84320
-        : activePlan === "pro"
-          ? 421900
-          : activePlan === "enterprise"
-            ? 1850400
-            : 6850,
-    tokenLimit:
-      activePlan === "personal"
-        ? 100000
-        : activePlan === "pro"
-          ? 500000
-          : activePlan === "enterprise"
-            ? 2000000
-            : 100000,
-  };
+            : 50;
+    const tokenLimit = activePlan === "personal" ? 100000 : activePlan === "pro" ? 500000 : 2000000;
+    return {
+      msgUsed,
+      msgLimit,
+      tokensRemaining: Math.max(0, tokenLimit - tokensUsedEst),
+      tokenLimit,
+    };
+  })();
 
   const creditBalance = activeTenant ? activeTenant.quotaBalance.toFixed(2) : "0.00";
 
@@ -1349,9 +1429,8 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
               Integraciones de Seguridad y Mejoras Soberanas
             </h3>
             <p className="text-[12.5px] text-muted-foreground mt-1">
-              Desbloquee características de grado militar y soberanía de datos optimizadas para el
-              Nodo Cero. Cada mejora puede ser activada descontando su costo en USD de su cuota de
-              tenant actual.
+              Hoja de ruta de capacidades soberanas para el Nodo Cero. Ninguna está disponible para
+              compra o activación: requieren backend real. No se realiza ningún cobro.
             </p>
           </div>
 
@@ -1379,10 +1458,10 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
                       className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded ${
                         up.active
                           ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                          : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                          : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                       }`}
                     >
-                      {up.active ? "ACTIVO" : `Coste: $${up.cost} USD`}
+                      {up.active ? "ACTIVO" : `ROADMAP · $${up.cost} USD est.`}
                     </span>
                   </div>
                   <p className="text-[11.5px] text-muted-foreground leading-relaxed mt-1">
@@ -1393,21 +1472,9 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
                 <div className="mt-4 pt-3 border-t border-border/20 flex justify-end">
                   <button
                     onClick={() => handleToggleUpgrade(up.id)}
-                    className={`font-mono text-[10px] uppercase tracking-wider px-4 py-1.5 rounded-xl border transition-all cursor-pointer font-semibold flex items-center gap-1.5 ${
-                      up.active
-                        ? "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border-rose-500/30"
-                        : "bg-electric text-platinum border-electric hover:bg-electric-light"
-                    }`}
+                    className="font-mono text-[10px] uppercase tracking-wider px-4 py-1.5 rounded-xl border transition-all cursor-pointer font-semibold flex items-center gap-1.5 bg-secondary/20 text-muted-foreground hover:text-white border-border/30"
                   >
-                    {up.active ? (
-                      <>
-                        <XCircle className="size-3.5" /> Desactivar
-                      </>
-                    ) : (
-                      <>
-                        <Check className="size-3.5" /> Adquirir Mejora
-                      </>
-                    )}
+                    <Check className="size-3.5" /> Ver estado
                   </button>
                 </div>
               </div>
@@ -1426,8 +1493,8 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
               Característica Especial 1: Visualizador Interactivo de Enrutamiento Neural
             </h3>
             <p className="text-[12px] text-muted-foreground leading-relaxed mb-4">
-              Simule la transmisión cognitiva exacta de un prompt. Vea la ruta que recorre la señal,
-              el nivel de acuerdo del consenso y qué células Alpha/Beta se activan para procesarlo.
+              Simulación ilustrativa local por palabras clave (no es el enrutador real ni evidencia
+              de consenso). Muestra una ruta aproximada con fines didácticos.
             </p>
 
             <div className="grid gap-4 md:grid-cols-[1fr_320px]">
@@ -1603,11 +1670,7 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
                       ].map((cat) => (
                         <button
                           key={cat.id}
-                          onClick={() =>
-                            setPlanCategory(
-                              cat.id as "inference" | "skills" | "apis",
-                            )
-                          }
+                          onClick={() => setPlanCategory(cat.id as "inference" | "skills" | "apis")}
                           className={`font-mono text-[10px] py-1.5 rounded-lg transition-all cursor-pointer ${
                             planCategory === cat.id
                               ? "bg-electric text-platinum font-semibold"
@@ -1670,11 +1733,10 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
                 <div className="border-t border-border/20 pt-3 mt-3">
                   <button
                     onClick={() => {
+                      // Sin mutación local: el saldo solo cambia cuando el servidor
+                      // registra el bloque y fetchDbState refresca el estado real.
                       if (activeTenant && activeTenant.quotaBalance >= parseFloat(estimatedUSD)) {
-                        activeTenant.quotaBalance -= parseFloat(estimatedUSD);
-                        toast.success(
-                          `Plan de cuotas de ${planTokens.toLocaleString()} tokens adquirido.`,
-                        );
+                        toast.info("Registrando plan en el ledger del servidor...");
                         void handleSimulateCreditUsage(
                           `Plan de Inferencia Proyectado (${planTokens.toLocaleString()} tokens)`,
                           planCategory as
@@ -1846,219 +1908,426 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
           </div>
 
           {/* Interactive Simulation Dashboard Grid */}
-          <div className="space-y-6">
-            <div className="border-b border-border/20 pb-2">
-              <h4 className="font-mono text-[14px] font-bold text-platinum flex items-center gap-2">
-                <Coins className="size-4.5 text-emerald-400" />
-                1. Centro de Control: Canales de Monetización Activos
-              </h4>
-              <p className="text-[11.5px] text-muted-foreground mt-0.5">
-                Simule actividades de provisión y verifique el flujo de caja acreditado al Libro
-                Mayor contable.
-              </p>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            {/* Column 1 & 2: Monetization Tracks Grid */}
+            <div className="xl:col-span-2 space-y-6">
+              <div className="border-b border-border/20 pb-2">
+                <h4 className="font-mono text-[14px] font-bold text-platinum flex items-center gap-2">
+                  <Coins className="size-4.5 text-emerald-400" />
+                  1. Canales de Monetización Activos
+                </h4>
+                <p className="text-[11.5px] text-muted-foreground mt-0.5">
+                  Simule actividades de provisión real y verifique el flujo de caja acreditado e
+                  inmutable.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Channel 1: GIS Provisioning */}
+                <div className="bg-secondary/5 border border-border/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Database className="size-4 text-emerald-400 shrink-0" />
+                      <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Track 01
+                      </span>
+                    </div>
+                    <h5 className="font-mono text-[13px] font-bold text-platinum">
+                      Provisión de Mapas GIS
+                    </h5>
+                    <p className="text-[11.5px] text-muted-foreground leading-relaxed">
+                      Cobre micro-transacciones catastrales por consultas espaciales en tiempo real
+                      en Real del Monte.
+                    </p>
+                  </div>
+                  {activeProvisionedKey && (
+                    <div className="p-2.5 rounded-lg bg-black/40 border border-emerald-500/30 font-mono text-[10px] text-emerald-400 break-all">
+                      Key Activa: <span className="underline">{activeProvisionedKey}</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={async () => {
+                      const nextKey = "isabella_gis_pk_" + Math.random().toString(16).slice(2, 10);
+                      setActiveProvisionedKey(nextKey);
+                      setSimulationLogs((prev) => [
+                        `[GIS] Generada clave GIS de simulación: ${nextKey}`,
+                        ...prev,
+                      ]);
+                      await handleExecuteMonetizationTask("gis");
+                    }}
+                    className="w-full py-2 bg-secondary/40 hover:bg-secondary/60 text-platinum border border-border/30 font-mono text-[11px] font-semibold rounded-xl transition-all cursor-pointer"
+                  >
+                    Proveer API Key (+$1.50)
+                  </button>
+                </div>
+
+                {/* Channel 2: GPU/CPU Share */}
+                <div className="bg-secondary/5 border border-border/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Cpu className="size-4 text-cyan-400 shrink-0" />
+                      <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Track 02
+                      </span>
+                    </div>
+                    <h5 className="font-mono text-[13px] font-bold text-platinum">
+                      Nodo de Cómputo Compartido
+                    </h5>
+                    <p className="text-[11.5px] text-muted-foreground leading-relaxed">
+                      Sincronice potencia de hardware local para computar inferencias de token de
+                      SOPHIA.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-black/40 border border-border/30 font-mono text-[10px]">
+                    <span className="text-muted-foreground">Estado del Daemon:</span>
+                    <span
+                      className={
+                        activeComputeNode ? "text-emerald-400 font-bold" : "text-amber-500"
+                      }
+                    >
+                      {activeComputeNode ? "● ACTIVO (85.4%)" : "○ DESCONECTADO"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const nextNodeState = !activeComputeNode;
+                      setActiveComputeNode(nextNodeState);
+                      if (nextNodeState) {
+                        setSimulationLogs((prev) => [
+                          "[COMPUTE] Daemon de hardware local conectado y sincronizado.",
+                          ...prev,
+                        ]);
+                        await handleExecuteMonetizationTask("compute");
+                      } else {
+                        setSimulationLogs((prev) => ["[COMPUTE] Daemon desconectado.", ...prev]);
+                      }
+                    }}
+                    className="w-full py-2 bg-secondary/40 hover:bg-secondary/60 text-platinum border border-border/30 font-mono text-[11px] font-semibold rounded-xl transition-all cursor-pointer"
+                  >
+                    {activeComputeNode ? "Desconectar Daemon" : "Compartir Hardware (+$3.00)"}
+                  </button>
+                </div>
+
+                {/* Channel 3: Premium Skill */}
+                <div className="bg-secondary/5 border border-border/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="size-4 text-purple-400 shrink-0" />
+                      <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Track 03
+                      </span>
+                    </div>
+                    <h5 className="font-mono text-[13px] font-bold text-platinum">
+                      Venta de Habilidades (Skills)
+                    </h5>
+                    <p className="text-[11.5px] text-muted-foreground leading-relaxed">
+                      Exponga habilidades cognitivas certificadas del sandbox para otros Tenants.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-black/40 border border-border/30 font-mono text-[10px]">
+                    <span className="text-muted-foreground">Skills Publicados:</span>
+                    <span className="text-purple-400 font-bold">
+                      {activePremiumSkill ? "1 (Activo)" : "0"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setActivePremiumSkill(true);
+                      setSimulationLogs((prev) => [
+                        "[SKILL] Publicado RealEstateValuationAgent de forma comercial.",
+                        ...prev,
+                      ]);
+                      await handleExecuteMonetizationTask("skill");
+                    }}
+                    className="w-full py-2 bg-secondary/40 hover:bg-secondary/60 text-platinum border border-border/30 font-mono text-[11px] font-semibold rounded-xl transition-all cursor-pointer"
+                  >
+                    Publicar Skill (+$5.00)
+                  </button>
+                </div>
+
+                {/* Channel 4: Quantum Optimization */}
+                <div className="bg-secondary/5 border border-border/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="size-4 text-blue-400 shrink-0" />
+                      <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Track 04
+                      </span>
+                    </div>
+                    <h5 className="font-mono text-[13px] font-bold text-platinum">
+                      Optimizador Quántico
+                    </h5>
+                    <p className="text-[11.5px] text-muted-foreground leading-relaxed">
+                      Resuelva códigos correctores de errores cuánticos (QEC) para reducir ruido
+                      neural.
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setSimulationLogs((prev) => [
+                        "[QEC] Resolviendo circuitos de código tórico cuántico.",
+                        ...prev,
+                      ]);
+                      await handleExecuteMonetizationTask("qec");
+                    }}
+                    className="w-full py-2 bg-secondary/40 hover:bg-secondary/60 text-platinum border border-border/30 font-mono text-[11px] font-semibold rounded-xl transition-all cursor-pointer"
+                  >
+                    Ejecutar QEC (+$8.20)
+                  </button>
+                </div>
+
+                {/* Channel 5: Historical Validation */}
+                <div className="bg-secondary/5 border border-border/30 rounded-2xl p-5 flex flex-col justify-between space-y-4 md:col-span-2">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Shield className="size-4 text-amber-400 shrink-0" />
+                      <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Track 05
+                      </span>
+                    </div>
+                    <h5 className="font-mono text-[13px] font-bold text-platinum">
+                      Validación de Patrimonio
+                    </h5>
+                    <p className="text-[11.5px] text-muted-foreground leading-relaxed">
+                      Firme digitalmente e inmutabilice archivos de bienes históricos de Real del
+                      Monte en el Libro Mayor.
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setSimulationLogs((prev) => [
+                        "[PATRIMONY] Validando y sellando firmas de patrimonio histórico en BookPI.",
+                        ...prev,
+                      ]);
+                      await handleExecuteMonetizationTask("patrimony");
+                    }}
+                    className="w-full py-2 bg-secondary/40 hover:bg-secondary/60 text-platinum border border-border/30 font-mono text-[11px] font-semibold rounded-xl transition-all cursor-pointer"
+                  >
+                    Validar Archivo de Bien (+$0.75)
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {/* Channel 1: GIS Provisioning */}
-              <div className="bg-secondary/5 border border-border/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Database className="size-4 text-emerald-400 shrink-0" />
-                    <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                      Track 01
-                    </span>
-                  </div>
-                  <h5 className="font-mono text-[13px] font-bold text-platinum">
-                    Provisión de Mapas GIS
-                  </h5>
-                  <p className="text-[11.5px] text-muted-foreground leading-relaxed">
-                    Aproveche la base de datos geográfica catastral de Real del Monte. Genere llaves
-                    y cobre micro-transacciones por llamada.
-                  </p>
-                </div>
-                {activeProvisionedKey && (
-                  <div className="p-2.5 rounded-lg bg-black/40 border border-emerald-500/30 font-mono text-[10px] text-emerald-400 break-all">
-                    Key Activa: <span className="underline">{activeProvisionedKey}</span>
-                  </div>
-                )}
-                <button
-                  onClick={() => {
-                    const nextKey = "isabella_gis_pk_" + Math.random().toString(16).slice(2, 10);
-                    setActiveProvisionedKey(nextKey);
-                    setEarnedBalance((b) => b + 1.5);
-                    setSimulationLogs((prev) => [
-                      `[COMPILADOR] Generada API Key de aprovisionamiento GIS: ${nextKey}. Llamada registrada catastral con éxito. +$1.50 USD`,
-                      ...prev,
-                    ]);
-                    toast.success(
-                      "¡API Key GIS Generada y Balance de Cuentas Acreditado (+$1.50)!",
-                    );
-                  }}
-                  className="w-full py-2 bg-secondary/40 hover:bg-secondary/60 text-platinum border border-border/30 font-mono text-[11px] font-semibold rounded-xl transition-all cursor-pointer"
-                >
-                  Proveer API Key (+$1.50)
-                </button>
+            {/* Column 3: Eligibility & Withdraw Control Panel */}
+            <div className="space-y-6">
+              <div className="border-b border-border/20 pb-2">
+                <h4 className="font-mono text-[14px] font-bold text-platinum flex items-center gap-2">
+                  <Sliders className="size-4.5 text-electric" />
+                  2. Parámetros de Elegibilidad
+                </h4>
+                <p className="text-[11.5px] text-muted-foreground mt-0.5">
+                  Configure y verifique las reglas del Fideicomiso Contable.
+                </p>
               </div>
 
-              {/* Channel 2: GPU/CPU Share */}
-              <div className="bg-secondary/5 border border-border/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Cpu className="size-4 text-cyan-400 shrink-0" />
-                    <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                      Track 02
+              {/* Status Indicator Card */}
+              {eligibilityInfo && monetizationAccount && (
+                <div className="border border-border/30 rounded-2xl p-5 bg-secondary/15 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10.5px] text-muted-foreground uppercase">
+                      Estado de Elegibilidad:
+                    </span>
+                    <span
+                      className={`font-mono text-[11px] font-bold uppercase px-2.5 py-0.5 rounded border ${
+                        eligibilityInfo.eligible
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/25 animate-pulse"
+                          : "bg-rose-500/10 text-rose-400 border-rose-500/25"
+                      }`}
+                    >
+                      {eligibilityInfo.eligible ? "APROBADO" : "BLOQUEADO"}
                     </span>
                   </div>
-                  <h5 className="font-mono text-[13px] font-bold text-platinum">
-                    Nodo de Cómputo Compartido
-                  </h5>
-                  <p className="text-[11.5px] text-muted-foreground leading-relaxed">
-                    Sincronice su GPU local mediante Docker con el Nodo Cero para procesar
-                    inferencias de token y cálculos vectoriales territoriales.
-                  </p>
+
+                  {/* Micro checklist indicators */}
+                  <div className="space-y-2 pt-2 border-t border-border/10 font-mono text-[11px]">
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">1. Identidad OIDC:</span>
+                      <span
+                        className={
+                          monetizationAccount.identityVerified
+                            ? "text-emerald-400"
+                            : "text-rose-400"
+                        }
+                      >
+                        {monetizationAccount.identityVerified ? "Verificada" : "Pendiente"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">2. Cuenta de Pago:</span>
+                      <span
+                        className={
+                          monetizationAccount.paymentAccountVerified
+                            ? "text-emerald-400"
+                            : "text-rose-400"
+                        }
+                      >
+                        {monetizationAccount.paymentAccountVerified
+                          ? "Vinculada"
+                          : "Falta Vincular"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">3. Capacitación Antifraude:</span>
+                      <span
+                        className={
+                          monetizationAccount.trainingCompleted
+                            ? "text-emerald-400"
+                            : "text-rose-400"
+                        }
+                      >
+                        {monetizationAccount.trainingCompleted ? "Completada" : "Pendiente"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">4. Perfil de Operador:</span>
+                      <span
+                        className={
+                          monetizationAccount.profileComplete ? "text-emerald-400" : "text-rose-400"
+                        }
+                      >
+                        {monetizationAccount.profileComplete ? "Completo" : "Incompleto"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">
+                        5. Retención de Seguridad (Fraud):
+                      </span>
+                      <span
+                        className={
+                          monetizationAccount.underFraudReview
+                            ? "text-rose-400 font-bold"
+                            : "text-emerald-400"
+                        }
+                      >
+                        {monetizationAccount.underFraudReview ? "REVISIÓN ACTIVA" : "Sin Alertas"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">6. Saldo Mínimo ($50.00):</span>
+                      <span className={earnedBalance >= 50 ? "text-emerald-400" : "text-amber-400"}>
+                        {earnedBalance >= 50
+                          ? "Satisfecho"
+                          : `Faltan $${(50 - earnedBalance).toFixed(2)} USD`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Blocked reasons visual feedback */}
+                  {!eligibilityInfo.eligible && eligibilityInfo.blockedReasons.length > 0 && (
+                    <div className="p-3 bg-rose-500/5 border border-rose-500/25 rounded-xl space-y-1.5 mt-2">
+                      <span className="block font-mono text-[9px] uppercase font-bold text-rose-400">
+                        Motivos del Bloqueo:
+                      </span>
+                      <ul className="list-disc list-inside text-[10px] text-muted-foreground font-mono space-y-1">
+                        {eligibilityInfo.blockedReasons.map((reason: string) => {
+                          let label = reason;
+                          if (reason === "IDENTITY_UNVERIFIED")
+                            label = "Falta de Consentimiento OIDC";
+                          else if (reason === "PAYMENT_ACCOUNT_UNVERIFIED")
+                            label = "Cuenta de pagos no vinculada";
+                          else if (reason === "TRAINING_INCOMPLETE")
+                            label = "Capacitación de Cumplimiento faltante";
+                          else if (reason === "PROFILE_INCOMPLETE")
+                            label = "Perfil de Operador incompleto";
+                          else if (reason === "UNDER_FRAUD_REVIEW")
+                            label = "Sujeto a hold preventivo de seguridad";
+                          else if (reason === "MINIMUM_BALANCE_NOT_MET")
+                            label = "Saldo menor al mínimo de retiro ($50.00)";
+                          else if (reason === "NO_RECENT_ACTIVITY")
+                            label = "Sin actividad reciente de provisión";
+                          return (
+                            <li key={reason} className="truncate">
+                              {label}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center justify-between p-2.5 rounded-lg bg-black/40 border border-border/30 font-mono text-[10px]">
-                  <span className="text-muted-foreground">Estado del Daemon:</span>
-                  <span
-                    className={activeComputeNode ? "text-emerald-400 font-bold" : "text-amber-500"}
-                  >
-                    {activeComputeNode ? "● ACTIVO (85.4% Potencia)" : "○ DESCONECTADO"}
+              )}
+
+              {/* Live Interactive Verification Toggles Card */}
+              {monetizationAccount && (
+                <div className="border border-border/30 rounded-2xl p-5 bg-secondary/10 space-y-3">
+                  <span className="block font-mono text-[9.5px] uppercase text-muted-foreground tracking-wider mb-1">
+                    Simulador: Modificar Parámetros
                   </span>
-                </div>
-                <button
-                  onClick={() => {
-                    const nextNodeState = !activeComputeNode;
-                    setActiveComputeNode(nextNodeState);
-                    if (nextNodeState) {
-                      setEarnedBalance((b) => b + 3.0);
-                      setSimulationLogs((prev) => [
-                        "[NODO_CERO] Daemon Docker conectado exitosamente. Procesando 1,420 tokens de inferencia local de SOPHIA. +$3.00 USD",
-                        ...prev,
-                      ]);
-                      toast.success("¡Nodo de Cómputo Conectado al Nodo Cero (+$3.00)!");
-                    } else {
-                      setSimulationLogs((prev) => [
-                        "[INFO] Daemon Docker desconectado. Sincronización finalizada.",
-                        ...prev,
-                      ]);
-                    }
-                  }}
-                  className="w-full py-2 bg-secondary/40 hover:bg-secondary/60 text-platinum border border-border/30 font-mono text-[11px] font-semibold rounded-xl transition-all cursor-pointer"
-                >
-                  {activeComputeNode ? "Desconectar Daemon" : "Compartir Hardware (+$3.00)"}
-                </button>
-              </div>
 
-              {/* Channel 3: Premium Skill */}
-              <div className="bg-secondary/5 border border-border/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="size-4 text-purple-400 shrink-0" />
-                    <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                      Track 03
-                    </span>
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-3 font-mono text-[11px] text-platinum cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={monetizationAccount.identityVerified}
+                        onChange={(e) =>
+                          handleUpdateMonetizationProfile({ identityVerified: e.target.checked })
+                        }
+                        className="rounded border-border/40 text-electric bg-secondary/30 focus:ring-0 size-3.5 cursor-pointer"
+                      />
+                      <span>Consentimiento e Identidad OIDC</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 font-mono text-[11px] text-platinum cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={monetizationAccount.paymentAccountVerified}
+                        onChange={(e) =>
+                          handleUpdateMonetizationProfile({
+                            paymentAccountVerified: e.target.checked,
+                          })
+                        }
+                        className="rounded border-border/40 text-electric bg-secondary/30 focus:ring-0 size-3.5 cursor-pointer"
+                      />
+                      <span>Vincular Cuenta de Pago (Wallet)</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 font-mono text-[11px] text-platinum cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={monetizationAccount.trainingCompleted}
+                        onChange={(e) =>
+                          handleUpdateMonetizationProfile({ trainingCompleted: e.target.checked })
+                        }
+                        className="rounded border-border/40 text-electric bg-secondary/30 focus:ring-0 size-3.5 cursor-pointer"
+                      />
+                      <span>Completar Capacitación Antifraude</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 font-mono text-[11px] text-platinum cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={monetizationAccount.profileComplete}
+                        onChange={(e) =>
+                          handleUpdateMonetizationProfile({ profileComplete: e.target.checked })
+                        }
+                        className="rounded border-border/40 text-electric bg-secondary/30 focus:ring-0 size-3.5 cursor-pointer"
+                      />
+                      <span>Llenar Perfil de Operador</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 font-mono text-[11px] text-rose-400 font-bold cursor-pointer select-none pt-1 border-t border-border/10">
+                      <input
+                        type="checkbox"
+                        checked={monetizationAccount.underFraudReview}
+                        onChange={(e) =>
+                          handleUpdateMonetizationProfile({ underFraudReview: e.target.checked })
+                        }
+                        className="rounded border-border/40 text-rose-500 bg-secondary/30 focus:ring-0 size-3.5 cursor-pointer"
+                      />
+                      <span>Simular Retención por Fraude (Hold)</span>
+                    </label>
                   </div>
-                  <h5 className="font-mono text-[13px] font-bold text-platinum">
-                    Venta de Habilidades (Skills)
-                  </h5>
-                  <p className="text-[11.5px] text-muted-foreground leading-relaxed">
-                    Compile y exponga habilidades cognitivas avanzadas del sandbox para
-                    licenciamiento comercial a otros Tenants del ecosistema.
-                  </p>
                 </div>
-                <div className="flex items-center justify-between p-2.5 rounded-lg bg-black/40 border border-border/30 font-mono text-[10px]">
-                  <span className="text-muted-foreground">Habilidades Publicadas:</span>
-                  <span className="text-purple-400 font-bold">
-                    {activePremiumSkill ? "1 (Activa)" : "0"}
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    setActivePremiumSkill(true);
-                    setEarnedBalance((b) => b + 5.0);
-                    setSimulationLogs((prev) => [
-                      "[MEMORIA_SOCIOS] Publicada habilidad 'RealEstateValuationAgent' con firma de autenticación. Licencia de uso adquirida por tenant 'RDM_Hub_01'. +$5.00 USD",
-                      ...prev,
-                    ]);
-                    toast.success("¡Habilidad Premium Publicada y Licenciada (+$5.00)!");
-                  }}
-                  className="w-full py-2 bg-secondary/40 hover:bg-secondary/60 text-platinum border border-border/30 font-mono text-[11px] font-semibold rounded-xl transition-all cursor-pointer"
-                >
-                  Publicar Habilidad Premium (+$5.00)
-                </button>
-              </div>
+              )}
 
-              {/* Channel 4: Quantum Optimization */}
-              <div className="bg-secondary/5 border border-border/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Terminal className="size-4 text-blue-400 shrink-0" />
-                    <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                      Track 04
-                    </span>
-                  </div>
-                  <h5 className="font-mono text-[13px] font-bold text-platinum">
-                    Optimizador Quántico (QEC)
-                  </h5>
-                  <p className="text-[11.5px] text-muted-foreground leading-relaxed">
-                    Ejecute códigos correctores de errores cuánticos (Toric Code / Tensor Networks)
-                    para la reducción de ruido en enrutamientos complejos.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setEarnedBalance((b) => b + 8.2);
-                    setSimulationLogs((prev) => [
-                      "[QUP_TORIC] Ejecutada simulación de corrección de error de código tórico. Paridad de síndromes estabilizada (ruido: 1.4%). Recompensa transferida. +$8.20 USD",
-                      ...prev,
-                    ]);
-                    toast.success("¡Circuito Cuántico Simulado y Auditado (+$8.20)!");
-                  }}
-                  className="w-full py-2 bg-secondary/40 hover:bg-secondary/60 text-platinum border border-border/30 font-mono text-[11px] font-semibold rounded-xl transition-all cursor-pointer"
-                >
-                  Ejecutar Simulación QEC (+$8.20)
-                </button>
-              </div>
-
-              {/* Channel 5: Historical Validation */}
-              <div className="bg-secondary/5 border border-border/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Shield className="size-4 text-amber-400 shrink-0" />
-                    <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                      Track 05
-                    </span>
-                  </div>
-                  <h5 className="font-mono text-[13px] font-bold text-platinum">
-                    Validación de Patrimonio
-                  </h5>
-                  <p className="text-[11.5px] text-muted-foreground leading-relaxed">
-                    Firme de forma contable y valide metadatos digitales históricos de minas y
-                    acervos de Real del Monte contra BookPI.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setEarnedBalance((b) => b + 0.75);
-                    setSimulationLogs((prev) => [
-                      "[BOOKPI_LEDGER] Validada firma inmutable de archivo de patrimonio histórico 'Museo_Minas_Real.xml' contra el Libro Mayor. Micro-grante liberado. +$0.75 USD",
-                      ...prev,
-                    ]);
-                    toast.success("¡Patrimonio Validado y Sello Firmado (+$0.75)!");
-                  }}
-                  className="w-full py-2 bg-secondary/40 hover:bg-secondary/60 text-platinum border border-border/30 font-mono text-[11px] font-semibold rounded-xl transition-all cursor-pointer"
-                >
-                  Validar Archivo de Bien (+$0.75)
-                </button>
-              </div>
-
-              {/* Account Balance card (Non-nested look) */}
+              {/* Account Balance and Withdraw Panel */}
               <div className="border border-electric/40 bg-electric/5 rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-sm">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <DollarSign className="size-4.5 text-electric shrink-0 animate-pulse" />
                     <span className="font-mono text-[11px] uppercase tracking-wider text-electric font-semibold">
-                      Saldo Acumulado
+                      Fideicomiso: Retiros Autorizados
                     </span>
                   </div>
                   <div className="font-mono text-[28px] font-bold text-white tracking-tight mt-1">
@@ -2066,47 +2335,28 @@ export function MonetizationDashboard({ initialTab }: { initialTab?: string | nu
                     <span className="text-[12px] text-muted-foreground font-normal">USD</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Regido por OIDC, RBAC y la regla canónica de división del Fideicomiso Contable
-                    (85% para usted).
+                    División Canónica del Fideicomiso Contable: 85% para el Operador del Nodo, 15%
+                    de comisión para reinversión en el Nodo Cero de Hidalgo.
                   </p>
                 </div>
                 <button
-                  onClick={() => {
-                    // Check Role Authorization
+                  onClick={async () => {
                     if (activeRole !== "SovereignOwner") {
                       toast.error(
-                        "ERROR DE AUTORIZACIÓN: Solo el rol 'SovereignOwner' puede retirar fondos.",
+                        "ERROR DE AUTORIZACIÓN: Solo el rol 'SovereignOwner' puede liquidar fondos.",
                       );
                       setSimulationLogs((prev) => [
-                        `[ADVERTENCIA_AUTH] Intento de retiro fallido. Rol actual '${activeRole}' no tiene permiso de retiro de balance.`,
+                        `[ADVERTENCIA_AUTH] Intento de retiro fallido. Rol actual '${activeRole}' carece de privilegios.`,
                         ...prev,
                       ]);
                       return;
                     }
-
-                    if (earnedBalance <= 0) {
-                      toast.error(
-                        "No tiene fondos acumulados suficientes en el Libro Mayor para liquidar.",
-                      );
-                      return;
-                    }
-
-                    const netPayout = earnedBalance * 0.85;
-                    const feeRetained = earnedBalance * 0.15;
-
-                    setSimulationLogs((prev) => [
-                      `[RETIRO_OIDC] Transferencia de retiro autorizada por el usuario. Liquidación de comisión (85% de comisión: $${netPayout.toFixed(4)} USD) enviada a cuenta bancaria vinculada. Tarifa de Fideicomiso Nodo Cero retenida (15%: $${feeRetained.toFixed(4)} USD).`,
-                      ...prev,
-                    ]);
-
-                    toast.success(
-                      `¡Retiro de $${netPayout.toFixed(2)} USD procesado con éxito (Comisión 85/15)!`,
-                    );
-                    setEarnedBalance(0.0);
+                    const key = "with_idemp_" + Math.random().toString(36).slice(2, 12);
+                    await handleRequestWithdrawal(key);
                   }}
-                  className="w-full py-2 bg-electric text-platinum border border-electric rounded-xl font-mono text-[11px] hover:bg-electric-light transition-all cursor-pointer font-bold"
+                  className="w-full py-2.5 bg-electric text-platinum border border-electric rounded-xl font-mono text-[11px] hover:bg-electric-light transition-all cursor-pointer font-bold uppercase tracking-wider"
                 >
-                  Liquidar Retiro Completo (Comisión 85/15)
+                  Liquidar Retiro Completo (85% Net)
                 </button>
               </div>
             </div>
