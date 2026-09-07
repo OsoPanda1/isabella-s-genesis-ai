@@ -82,6 +82,8 @@ export const Route = createFileRoute("/api/isabella")({
           resolveRuntimeMode(config().ISABELLA_RUNTIME_MODE),
         );
         const useNativeOnly = !apiKey;
+        // Proveedor activo: puerta soberana de Lovable (OpenAI SSE nativo) o Gemini directo.
+        const aiProvider = apiKey ? secrets.aiProvider() : "gemini";
 
         // Parse Request Body safely with byte counter and hard limit aborts (P15)
         let rawBody;
@@ -288,30 +290,56 @@ export const Route = createFileRoute("/api/isabella")({
           return new Response(sseBody, { headers });
         }
         try {
-          const upstream = await SecuritySystem.fetchSafeUpstream(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:streamGenerateContent`,
-            {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                "x-goog-api-key": apiKey,
-              },
-              body: JSON.stringify({
-                contents: [
-                  { role: "user", parts: [{ text: sanitizedSystem.clean }] },
-                  ...messages.map((m) => ({
-                    role: m.role === "assistant" ? "model" : "user",
-                    parts: [
-                      {
-                        text: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-                      },
+          const usingLovableGateway = aiProvider === "lovable-gateway";
+          const upstream = usingLovableGateway
+            ? await SecuritySystem.fetchSafeUpstream(
+                "https://ai.gateway.lovable.dev/v1/chat/completions",
+                {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    authorization: `Bearer ${apiKey}`,
+                  },
+                  body: JSON.stringify({
+                    model: config().LLM_DEFAULT_MODEL,
+                    stream: true,
+                    temperature,
+                    messages: [
+                      { role: "system", content: sanitizedSystem.clean },
+                      ...messages.map((m) => ({
+                        role: m.role,
+                        content:
+                          typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+                      })),
                     ],
-                  })),
-                ],
-                generationConfig: { temperature, maxOutputTokens: 8192 },
-              }),
-            },
-          );
+                  }),
+                },
+              )
+            : await SecuritySystem.fetchSafeUpstream(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:streamGenerateContent`,
+                {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    "x-goog-api-key": apiKey,
+                  },
+                  body: JSON.stringify({
+                    contents: [
+                      { role: "user", parts: [{ text: sanitizedSystem.clean }] },
+                      ...messages.map((m) => ({
+                        role: m.role === "assistant" ? "model" : "user",
+                        parts: [
+                          {
+                            text:
+                              typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+                          },
+                        ],
+                      })),
+                    ],
+                    generationConfig: { temperature, maxOutputTokens: 8192 },
+                  }),
+                },
+              );
 
           if (!upstream.ok || !upstream.body) {
             const detail = await upstream.text().catch(() => "");
@@ -379,6 +407,11 @@ export const Route = createFileRoute("/api/isabella")({
             telemetry.traceId,
             telemetry.correlationId,
           );
+
+          // La puerta de Lovable ya emite el formato OpenAI SSE que consume useIsabella.
+          if (usingLovableGateway) {
+            return new Response(upstream.body, { headers });
+          }
 
           // Translate Gemini stream (candidates) → OpenAI delta format expected by useIsabella
           const contentType = upstream.headers.get("content-type") ?? "";
