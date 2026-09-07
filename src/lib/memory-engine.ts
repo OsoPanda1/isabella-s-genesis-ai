@@ -30,7 +30,7 @@ export interface MemoryAccessRequest {
   scope: MemoryScope;
   authenticated: boolean;
   /** Scopes concedidos al actor (desde identidad). */
-  grantedScopes?: readonly MemoryScope[];
+  grantedScopes: readonly MemoryScope[];
 }
 
 export interface MemoryDecision {
@@ -38,41 +38,38 @@ export interface MemoryDecision {
   reason: string;
 }
 
-const GLOBAL_SCOPE_ROLES: readonly MemoryActorRole[] = ["SovereignOwner", "Auditor"];
-
 /** Comprueba si el actor posee el scope requerido (mínimo privilegio). */
 export function canAccessScope(request: MemoryAccessRequest): MemoryDecision {
   if (!request.authenticated) {
     return { allowed: false, reason: "Actor no autenticado: memoria denegada." };
   }
-  if (request.grantedScopes && !request.grantedScopes.includes(request.scope)) {
+  if (!request.grantedScopes.includes(request.scope)) {
     return { allowed: false, reason: `Falta el scope de memoria '${request.scope}'.` };
   }
   return { allowed: true, reason: `Scope '${request.scope}' concedido.` };
 }
 
 /** Comprueba si el actor puede leer un registro según sensibilidad y tenant. */
-export function canReadRecord(
-  request: MemoryAccessRequest,
-  record: MemoryRecord,
-): MemoryDecision {
+export function canReadRecord(request: MemoryAccessRequest, record: MemoryRecord): MemoryDecision {
   if (record.tenantId !== request.tenantId) {
-    if (!GLOBAL_SCOPE_ROLES.includes(request.role)) {
-      return { allowed: false, reason: "Frontera de tenant violada al leer memoria." };
-    }
+    return { allowed: false, reason: "Frontera de tenant violada al leer memoria." };
   }
 
   if (record.sensitivity === "personal" || record.sensitivity === "restricted") {
     const isOwner = record.ownerId === request.actorId;
     if (record.sensitivity === "restricted") {
-      if (request.role === "SovereignOwner") return { allowed: true, reason: "Propietario soberano." };
+      if (request.role === "SovereignOwner")
+        return { allowed: true, reason: "Propietario soberano." };
       if (request.role === "Auditor") return { allowed: true, reason: "Auditoría autorizada." };
       return isOwner
         ? { allowed: true, reason: "Propietario del registro restringido." }
         : { allowed: false, reason: "Registro restringido ajeno." };
     }
     // personal
-    if (!isOwner && !GLOBAL_SCOPE_ROLES.includes(request.role)) {
+    if (!isOwner) {
+      if (request.role === "SovereignOwner" || request.role === "Auditor") {
+        return { allowed: true, reason: "Acceso autorizado por rol de alto nivel." };
+      }
       return { allowed: false, reason: "Dato personal ajeno." };
     }
   }

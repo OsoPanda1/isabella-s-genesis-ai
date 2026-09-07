@@ -4,6 +4,19 @@
   "ledger": [],
   "auditLogs": [
     {
+      "id": "evt_fe589dc7-e82a-460a-9175-fd79b7ee8018",
+      "timestamp": "2026-09-07T03:56:42.698Z",
+      "traceId": "trc_dev_495c4f94",
+      "correlationId": "corr_trc_dev_495c4f94",
+      "actorIp": "local_client",
+      "event": "dev.session_issued",
+      "severity": "S3",
+      "details": "Sesión de desarrollo emitida para Dev Admin (SovereignOwner).",
+      "remediated": true,
+      "verificationHash": "7d1ee44047333b446978b626bb3eff5ce1f179cd407870887ed4660ee477c02d",
+      "previousLogHash": "a138ae1f74f809a8e77552b8d3ccc3fbd0a27860b9e1b98bd0407b24c095189b"
+    },
+    {
       "id": "evt_102a4350-fa50-4471-8b55-5d2f7772f45f",
       "timestamp": "2026-09-04T07:14:14.390Z",
       "traceId": "trc_dev_7a33385d",

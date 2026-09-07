@@ -1,7 +1,8 @@
 import { SecuritySystem } from "./security";
 import { PrincipalContext } from "./principal-context";
-import { authorize, type AuthorizationRequest } from "./authorization";
+import { evaluateAuthorization, type AuthorizationContext } from "./authorization";
 import type { Resource, Action } from "./permission-matrix";
+import { runWithIdentity } from "./identity-context";
 
 /**
  * SOVEREIGN API GATEWAY (src/lib/api-gateway.ts)
@@ -36,37 +37,25 @@ export class ApiGateway {
     const { context } = authResult;
 
     // 2. Control de acceso centralizado (RBAC/ABAC/Tenant Isolation)
-    const authReq: AuthorizationRequest = {
-      identity: {
-        subject: context.userId,
-        username: context.username,
-        tenantId: context.tenantId,
-        role: context.role,
-        scopes: context.scope ? context.scope.split(" ") : [],
-        authenticated: true,
-      },
-      resource,
-      action,
-      tenant: {
-        context: {
-          subject: context.userId,
-          username: context.username,
-          tenantId: context.tenantId,
-          resolvedBy: context.username === "api_key_session" ? "api_key" : "bearer",
-          authenticated: true,
-          resolvedAt: new Date().toISOString(),
-        },
-        boundaryOk: true,
-        reason: "ok",
+    const authReq: AuthorizationContext = {
+      tenant_id: context.tenantId,
+      subject_id: context.userId,
+      action: action,
+      resource: resource,
+      role: context.role,
+      authenticated: true,
+      context: {
+        ip_address: request.headers.get("x-forwarded-for") ?? "127.0.0.1",
+        user_agent: request.headers.get("user-agent") ?? "unknown",
+        timestamp: new Date(),
       },
     };
 
-    const decisionResult = authorize(authReq);
-    if (decisionResult.decision === "denied") {
+    const decisionResult = await evaluateAuthorization(authReq);
+    if (!decisionResult.allow) {
       return new Response(
         JSON.stringify({
           error: `Acceso Denegado: Privilegios insuficientes para la operación (${resource}:${action}).`,
-          reasons: decisionResult.reasons,
           traceId: context.traceId,
         }),
         { status: 403, headers },
@@ -96,7 +85,7 @@ export class ApiGateway {
       }
     }
 
-    // 4. Delegación a la lógica de negocio final
-    return handler(context, parsedData);
+    // 4. Delegación a la lógica de negocio final (con identidad en request-context)
+    return runWithIdentity(context.toRequestIdentity(), () => handler(context, parsedData));
   }
 }

@@ -7,17 +7,17 @@ import {
 import { evaluateEligibility } from "./eligibility";
 
 /**
- * RETIROS Y LIQUIDACIÓN (src/lib/monetization/withdrawal.ts)
+ * WITHDRAWAL & ZERO-LOSS SETTLEMENT (src/lib/monetization/withdrawal.ts)
  * -----------------------------------------------------------------
- * Gestiona la solicitud de retiro mensual: validación de elegibilidad,
- * revisión antifraude, idempotencia, creación de payout id y registro
- * en BookPI. La confirmación de pago proviene siempre del proveedor
- * de pagos (webhook firmado), nunca de la afirmación del cliente.
+ * Manages the withdrawal requests. Enforces the 90-day escrow maturation
+ * and checks the territorial node's liquidity pool. If the platform lacks
+ * liquidity, or the funds haven't matured, the withdrawal is blocked.
+ * The platform NEVER uses its own funds to pay out early.
  */
 
 export interface WithdrawalRiskReview {
   reviewId: string;
-  status: "pass" | "hold";
+  status: "pass" | "hold" | "fraud_detected";
   score: number;
   signals: string[];
 }
@@ -27,6 +27,7 @@ export interface WithdrawalDependencies {
   runRiskReview(userId: string): Promise<WithdrawalRiskReview>;
   isIdempotent(key: string): Promise<boolean>;
   markIdempotent(key: string): Promise<void>;
+  checkLiquidityPool(territoryId: string, amountCents: number): Promise<boolean>;
   appendBookPI(entry: {
     type: string;
     userId: string;
@@ -47,6 +48,7 @@ export class WithdrawalService {
 
   async request(
     userId: string,
+    territoryId: string,
     opts?: { idempotencyKey?: string },
   ): Promise<
     | { ok: true; payoutId: string; status: "scheduled" }
@@ -60,6 +62,7 @@ export class WithdrawalService {
       }
   > {
     const idempotencyKey = opts?.idempotencyKey ?? randomUUID();
+
     const isIdem = await this.deps.isIdempotent(idempotencyKey);
     if (isIdem) {
       return { ok: false, code: "IDEMPOTENCY_REPLAY" };
@@ -75,24 +78,35 @@ export class WithdrawalService {
       };
     }
 
+    // Strict 90-day matured balance check
     if (eligibility.availableBalanceCents < MINIMUM_WITHDRAWAL_CENTS) {
       return {
         ok: false,
-        code: "MINIMUM_WITHDRAWAL_NOT_REACHED",
+        code: "MINIMUM_WITHDRAWAL_NOT_REACHED_OR_FUNDS_IN_ESCROW",
         minimumCents: MINIMUM_WITHDRAWAL_CENTS,
         availableCents: eligibility.availableBalanceCents,
       };
     }
 
+    // Zero-Loss Check: Does the territorial pool have actual cash liquidity?
+    const hasLiquidity = await this.deps.checkLiquidityPool(territoryId, eligibility.availableBalanceCents);
+    if (!hasLiquidity) {
+      return {
+        ok: false,
+        code: "INSUFFICIENT_LIQUIDITY_POOL",
+        reasons: ["TERRITORIAL_FUNDS_PENDING_CLEARANCE"],
+      };
+    }
+
     const review = await this.deps.runRiskReview(userId);
     await this.deps.appendBookPI({
-      type: review.status === "hold" ? "withdrawal.held" : "withdrawal.review.passed",
+      type: review.status === "pass" ? "withdrawal.review.passed" : "withdrawal.held",
       userId,
       riskScore: review.score,
       idempotencyKey,
     });
 
-    if (review.status === "hold") {
+    if (review.status === "hold" || review.status === "fraud_detected") {
       return {
         ok: false,
         code: "WITHDRAWAL_UNDER_REVIEW",

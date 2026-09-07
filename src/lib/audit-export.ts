@@ -1,5 +1,5 @@
-import { jsPDF } from "jspdf";
 import type { RoutingDecision } from "./crown-ui";
+import type { TelemetryLog } from "./latam-aegis-x";
 
 export interface TelemetryRecord {
   traceId: string;
@@ -87,7 +87,8 @@ export function exportTelemetryCsv(records: TelemetryRecord[], runId: string) {
   );
 }
 
-export function exportTelemetryPdf(records: TelemetryRecord[], runId: string, presetName: string) {
+export async function exportTelemetryPdf(records: TelemetryRecord[], runId: string, presetName: string) {
+  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
@@ -145,4 +146,98 @@ export function exportTelemetryPdf(records: TelemetryRecord[], runId: string, pr
   if (!records.length) line("Sin ciclos registrados en esta sesion.", 10, [100, 116, 139]);
 
   doc.save(`isabella-auditoria-${stamp()}.pdf`);
+}
+
+export async function exportSecurityCompliancePdf(logs: TelemetryLog[], runId: string) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  let y = 64;
+
+  const line = (
+    text: string,
+    size = 10,
+    color: [number, number, number] = [30, 41, 59],
+    bold = false,
+  ) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    for (const part of doc.splitTextToSize(text, W - 96) as string[]) {
+      if (y > H - 56) {
+        doc.addPage();
+        y = 64;
+      }
+      doc.text(part, 48, y);
+      y += size + 5;
+    }
+  };
+
+  line("LATAM-AEGIS-X SECURITY COMPLIANCE REPORT", 16, [153, 27, 27], true);
+  line("Nodo Cero · Real del Monte, Hidalgo · TAMV Online Network", 10, [100, 116, 139]);
+  line(`Report runId: ${runId} · Generated: ${new Date().toISOString()}`, 9, [100, 116, 139]);
+  line(
+    "Status: TAMPER-PROOF REVIEWS · SECURED WITH HMAC-SHA256 SIGNATURES",
+    9,
+    [16, 185, 129],
+    true,
+  );
+  y += 12;
+
+  // Render stats
+  const incidents = logs.filter((l) => l.level === "security_incident");
+  const warnings = logs.filter((l) => l.level === "warn");
+  const errors = logs.filter((l) => l.level === "error");
+
+  line("SUMMARY METRICS", 12, [15, 23, 42], true);
+  line(`Total Telemetry Logs: ${logs.length}`);
+  line(
+    `Security Incidents Detected: ${incidents.length}`,
+    10,
+    incidents.length > 0 ? [220, 38, 38] : [30, 41, 59],
+    incidents.length > 0,
+  );
+  line(`Warnings: ${warnings.length}`);
+  line(`Runtime Errors: ${errors.length}`);
+  y += 12;
+
+  line("COMPLIANCE VERIFICATION LEDGER", 12, [15, 23, 42], true);
+  if (!logs.length) {
+    line("No security events have been logged in the active session.", 10, [100, 116, 139]);
+  } else {
+    logs.forEach((log, index) => {
+      const levelColor: [number, number, number] =
+        log.level === "security_incident"
+          ? [153, 27, 27]
+          : log.level === "warn"
+            ? [180, 83, 9]
+            : log.level === "error"
+              ? [220, 38, 38]
+              : [30, 41, 59];
+
+      line(
+        `${index + 1}. [${log.level.toUpperCase()}] ${log.timestamp} · Event: ${log.eventName}`,
+        10,
+        levelColor,
+        true,
+      );
+      line(`    Module: ${log.moduleId} · Core: ${log.coreId}`, 9, [71, 85, 105]);
+      line(`    TraceId: ${log.traceId} · CorrelationId: ${log.correlationId}`, 9, [71, 85, 105]);
+
+      const payloadStr = JSON.stringify(log.payload);
+      line(
+        `    Payload: ${payloadStr.slice(0, 120)}${payloadStr.length > 120 ? "..." : ""}`,
+        8,
+        [100, 116, 139],
+      );
+
+      // Print the HMAC signature as tamper-proof evidence
+      line(`    Tamper-Proof Signature (HMAC-SHA256):`, 8, [16, 185, 129], true);
+      line(`    ${log.signature}`, 8, [16, 185, 129]);
+      y += 6;
+    });
+  }
+
+  doc.save(`isabella-compliance-${stamp()}.pdf`);
 }

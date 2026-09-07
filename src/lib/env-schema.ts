@@ -59,6 +59,8 @@ export const envSchema = z.object({
 
   // --- POSTGRES / SUPABASE ---
   DATABASE_URL: optionalString(),
+  DATABASE_DIRECT_URL: optionalString(),
+  INTERNAL_ORIGIN: optionalUrl(),
   SUPABASE_URL: optionalUrl(),
   SUPABASE_ANON_KEY: optionalString(),
   SUPABASE_SERVICE_ROLE_KEY: optionalString(),
@@ -66,6 +68,7 @@ export const envSchema = z.object({
 
   // --- JWT / OIDC ---
   AUTH_JWT_SECRET: optionalMinString(16),
+  SESSION_SECRET: optionalMinString(32),
   AUTH_ISSUER: optionalUrl(),
   AUTH_AUDIENCE: z.string().default("isabella"),
   AUTH_ACCESS_TOKEN_TTL: coercedInt(3600),
@@ -77,20 +80,26 @@ export const envSchema = z.object({
   // Solo desarrollo: habilita el login OIDC/OAuth manual de pruebas y la acción
   // `authenticate` (NUNCA en staging/production). Fail-closed por defecto.
   AUTH_DEV_SESSION_ENABLED: z
-    .preprocess((val) => {
-      if (typeof val !== "string") return undefined;
-      const trimmed = val.trim().toLowerCase();
-      if (trimmed === "" || trimmed === "undefined" || trimmed === "null") return undefined;
-      return trimmed;
-    }, z.enum(["true", "false"]).default("false"))
+    .preprocess(
+      (val) => {
+        if (typeof val !== "string") return undefined;
+        const trimmed = val.trim().toLowerCase();
+        if (trimmed === "" || trimmed === "undefined" || trimmed === "null") return undefined;
+        return trimmed;
+      },
+      z.enum(["true", "false"]).default("false"),
+    )
     .transform((val) => val === "true"),
   ALLOW_GUEST_CHAT: z
-    .preprocess((val) => {
-      if (typeof val !== "string") return undefined;
-      const t = val.trim().toLowerCase();
-      if (t === "" || t === "undefined" || t === "null") return undefined;
-      return t;
-    }, z.enum(["true", "false"]).default("false"))
+    .preprocess(
+      (val) => {
+        if (typeof val !== "string") return undefined;
+        const t = val.trim().toLowerCase();
+        if (t === "" || t === "undefined" || t === "null") return undefined;
+        return t;
+      },
+      z.enum(["true", "false"]).default("true"),
+    )
     .transform((val) => val === "true"),
   // Token de aprovisionamiento soberano del primer tenant/owner (bootstrap).
   // Sin este token, `provision-owner` niega la operación (fail-closed).
@@ -101,17 +110,58 @@ export const envSchema = z.object({
   ENCRYPTION_ALGORITHM: z.string().default("aes-256-gcm"),
 
   // --- CROWN ---
-  CROWN_CONSTITUTION_VERSION: z.string().default("v4.2.0"),
+  CROWN_CONSTITUTION_VERSION: z.string().min(1).default("v4.2.0-sovereign"),
   CROWN_POLICY_SIGNING_KEY: optionalString(),
-  CROWN_ENFORCEMENT_MODE: z.enum(["enforce", "warn", "dry-run"]).default("enforce"),
+  AEGIS_AUDIT_SECRET: optionalMinString(32),
+  CROWN_ENFORCEMENT_MODE: z.enum(["enforce", "dry-run"]).default("enforce"),
 
-  // --- BOOKPI ---
-  BOOKPI_SIGNATURE_ALGORITHM: z.string().default("NOT_IMPLEMENTED"),
-  BOOKPI_SIGNING_KEY: optionalString(),
+  // --- BOOKPI (Sovereign Ledger) ---
+  // ML-DSA-87 está declarado solo por compatibilidad de contrato; en este
+  // runtime es SIMULATION-ONLY (telemetría/tests, nunca autoridad de firma en
+  // producción). ECDSA-P384 y RSA-SHA256 son firmas criptográficas reales.
+  // El runtime SIEMPRE respeta el algoritmo aquí configurado (ver
+  // src/lib/crypto/bookpi-signer.ts) — nunca ejecuta uno distinto al declarado.
+  BOOKPI_SIGNATURE_ALGORITHM: z
+    .enum(["ML-DSA-87", "ECDSA-P384", "RSA-SHA256"])
+    .default("ECDSA-P384"),
+  BOOKPI_SIGNING_KEY: optionalMinString(32),
+
+  // --- PAYMENTS ---
+  STRIPE_SECRET_KEY: optionalMinString(16),
+  STRIPE_WEBHOOK_SECRET: optionalMinString(16),
+
+  // --- QUP SOVEREIGN RUNTIME (New v3.0 Configs) ---
+  QUP_ZNE_LEVEL: coercedInt(3),
+  // Coerción boolean explícita: los env vars llegan como strings ("true"/"false"),
+  // z.boolean() puro los rechazaría ("true" ≠ boolean) rompiendo el arranque.
+  QUP_PEC_ENABLED: z.preprocess((val) => {
+    if (typeof val === "boolean") return val;
+    if (typeof val !== "string") return undefined;
+    const t = val.trim().toLowerCase();
+    if (t === "true") return true;
+    if (t === "false") return false;
+    return undefined;
+  }, z.boolean().default(true)),
+  QUP_QEC_DECODER: z
+    .enum(["mwpm", "uf", "tensor-network", "neural-network"])
+    .default("tensor-network"),
+  QUP_STRICT_ISOLATION: z.preprocess((val) => {
+    if (typeof val === "boolean") return val;
+    if (typeof val !== "string") return undefined;
+    const t = val.trim().toLowerCase();
+    if (t === "true") return true;
+    if (t === "false") return false;
+    return undefined;
+  }, z.boolean().default(true)),
 
   // --- REDIS ---
   REDIS_URL: optionalString(),
+  REDIS_TOKEN: optionalString(),
   REDIS_PREFIX: z.string().default("isabella"),
+  KV_URL: optionalString(),
+  KV_REST_API_TOKEN: optionalString(),
+  UPSTASH_REDIS_TOKEN: optionalString(),
+  TRUSTED_PROXY_MODE: optionalString(),
 
   // --- RATE LIMIT ---
   RATE_LIMIT_DEFAULT_PER_MINUTE: coercedInt(120),
@@ -120,6 +170,7 @@ export const envSchema = z.object({
 
   // --- AI GATEWAY ---
   GEMINI_API_KEY: optionalString(),
+  LOVABLE_API_KEY: optionalString(),
   LLM_DEFAULT_MODEL: z.string().default("google/gemini-3.6-flash"),
   LLM_VOICE_MODEL: z.string().default("openai/gpt-4o-mini-tts"),
   VOICE_API_URL: optionalUrl(),
@@ -128,6 +179,9 @@ export const envSchema = z.object({
   // --- TELEMETRY ---
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalUrl(),
   OTEL_SERVICE_NAME: z.string().default("isabella-ai"),
+
+  // --- FEATURE FLAGS (server-curated, formato "clave=valor,clave=valor") ---
+  ISABELLA_FEATURE_FLAGS: z.string().default(""),
 
   // --- REDACTION ---
   REDACT_EXTRA_KEYS: z.string().default(""),
@@ -148,18 +202,17 @@ export const envSchema = z.object({
 
   // --- PERSISTENCE ---
   DURABLE_JSON_ALLOWED: z
-    .preprocess(
-      (val) => {
-        if (typeof val === "boolean") return val;
-        if (typeof val !== "string") return undefined;
-        const t = val.trim().toLowerCase();
-        if (t === "true") return true;
-        if (t === "false") return false;
-        return undefined;
-      },
-      z.boolean().default(false),
-    )
-    .describe("Allow JSON file persistence in production — must be false in prod, true only for dev/test"),
+    .preprocess((val) => {
+      if (typeof val === "boolean") return val;
+      if (typeof val !== "string") return undefined;
+      const t = val.trim().toLowerCase();
+      if (t === "true") return true;
+      if (t === "false") return false;
+      return undefined;
+    }, z.boolean().default(false))
+    .describe(
+      "Allow JSON file persistence in production — must be false in prod, true only for dev/test",
+    ),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -186,6 +239,11 @@ export function requiredEnvKeys(mode: RuntimeMode): (keyof Env)[] {
         "AUTH_JWT_SECRET",
         "GEMINI_API_KEY",
         "ENCRYPTION_MASTER_KEY",
+        "CROWN_POLICY_SIGNING_KEY",
+        "AEGIS_AUDIT_SECRET",
+        "BOOKPI_SIGNING_KEY",
+        "STRIPE_SECRET_KEY",
+        "STRIPE_WEBHOOK_SECRET",
       ];
     case "emergency":
     case "maintenance":

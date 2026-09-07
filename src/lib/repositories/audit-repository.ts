@@ -58,7 +58,9 @@ export function createAuditRepository(storePath: string = STORE_PATH) {
       return {
         events,
         genesisPreviousHash:
-          typeof parsed.genesisPreviousHash === "string" ? parsed.genesisPreviousHash : GENESIS_HASH,
+          typeof parsed.genesisPreviousHash === "string"
+            ? parsed.genesisPreviousHash
+            : GENESIS_HASH,
       };
     } catch {
       return { events: [], genesisPreviousHash: GENESIS_HASH };
@@ -119,7 +121,8 @@ export function createAuditRepository(storePath: string = STORE_PATH) {
       for (let i = 0; i < logs.length; i++) {
         const log = logs[i];
         if (!log) return { success: false, error: "Evento ausente.", corruptedId: "unknown" };
-        const expectedPrev = i === 0 ? store.genesisPreviousHash : (logs[i - 1]?.verificationHash ?? "");
+        const expectedPrev =
+          i === 0 ? store.genesisPreviousHash : (logs[i - 1]?.verificationHash ?? "");
         if (log.previousLogHash !== expectedPrev) {
           return { success: false, error: "Cadena de auditoría rota.", corruptedId: log.id };
         }

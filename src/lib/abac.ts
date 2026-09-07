@@ -99,6 +99,9 @@ export const DEFAULT_ABAC_POLICIES: readonly AbacPolicy[] = [
 /**
  * Evalúa las políticas ABAC sobre un contexto. Deny-overrides:
  * si alguna política aplicable deniega, el resultado final es deny.
+ * Si ninguna política aplica, el resultado es `notApplied` (fail-closed:
+ * el llamador —el PDP— solo permite cuando el RBAC concede y el ABAC
+ * no deniega; jamás se permite por silencio de políticas).
  */
 export function evaluateAbac(
   context: AttributeContext,
@@ -114,7 +117,7 @@ export function evaluateAbac(
       };
     }
   }
-  return { decision: "allow", policy: null, reason: "Ninguna política ABAC lo deniega." };
+  return { decision: "notApplied", policy: null, reason: "Ninguna política ABAC aplicable." };
 }
 
 export const ABAC = {

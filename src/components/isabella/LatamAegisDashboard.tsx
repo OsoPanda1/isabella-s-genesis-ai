@@ -1,5 +1,17 @@
-import { useState } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { getSessionToken } from "@/lib/auth-client";
+
+const ObservabilityPanel = lazy(() =>
+  import("./ObservabilityPanel").then((module) => ({ default: module.ObservabilityPanel })),
+);
+const SovereignCompliancePanel = lazy(() =>
+  import("./SovereignCompliancePanel").then((module) => ({
+    default: module.SovereignCompliancePanel,
+  })),
+);
+const SovereignSkillsPanel = lazy(() =>
+  import("./SovereignSkillsPanel").then((module) => ({ default: module.SovereignSkillsPanel })),
+);
 import {
   Shield,
   ShieldAlert,
@@ -131,6 +143,16 @@ const INITIAL_LAYERS: HardeningLayer[] = [
   },
 ];
 
+function PanelLoading() {
+  return (
+    <div className="flex min-h-64 items-center justify-center rounded-2xl border border-border/15 bg-secondary/10 text-muted-foreground">
+      <span className="font-mono text-xs uppercase tracking-[0.2em]">
+        Cargando módulo soberano…
+      </span>
+    </div>
+  );
+}
+
 export function LatamAegisDashboard() {
   const [level, setLevel] = useState<AegisLevel>(AegisLevel.OPEN);
   const [auditSecret, setAuditSecret] = useState("replace-with-another-long-random-secret");
@@ -141,6 +163,27 @@ export function LatamAegisDashboard() {
     "idle",
   );
   const [corruptedIndex, setCorruptedIndex] = useState<number | null>(null);
+  const [subTab, setSubTab] = useState<"firewall" | "observability" | "compliance" | "skills">(
+    "firewall",
+  );
+  const [toasts, setToasts] = useState<{ id: string; message: string; timestamp: string }[]>([]);
+
+  // Listen for self-healing core recovery toasts from backend
+  useEffect(() => {
+    const handleRecoveryToast = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const recoveryLog = customEvent.detail;
+      const newToast = {
+        id: recoveryLog.id,
+        message: recoveryLog.message,
+        timestamp: new Date(recoveryLog.timestamp).toLocaleTimeString(),
+      };
+      setToasts((prev) => [newToast, ...prev].slice(0, 5));
+    };
+
+    window.addEventListener("core-recovery-toast", handleRecoveryToast);
+    return () => window.removeEventListener("core-recovery-toast", handleRecoveryToast);
+  }, []);
 
   // Custom Event Creator state
   const [customActor, setCustomActor] = useState("anubis@villasenor.ai");
@@ -545,495 +588,594 @@ export function LatamAegisDashboard() {
         </div>
       </div>
 
-      {/* Main Grid split */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* LEFT COMPONENT: Simulation & Interactive Event Pipeline */}
-        <div className="lg:col-span-5 space-y-6">
-          <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-border/10">
-              <Activity className="size-4 text-red-400" />
-              <h3 className="text-xs font-bold font-mono text-platinum uppercase tracking-wider">
-                Simulador de Amenazas Reales (Pipeline Eval)
-              </h3>
-            </div>
+      {/* TABS SELECTOR BAR */}
+      <div className="flex border-b border-border/15 pb-1 gap-2 overflow-x-auto">
+        <button
+          onClick={() => setSubTab("firewall")}
+          className={`px-4 py-2 text-xs font-mono font-bold tracking-wider uppercase transition-all border-b-2 rounded-t-xl cursor-pointer shrink-0 ${
+            subTab === "firewall"
+              ? "border-red-500 text-red-400 bg-red-500/5"
+              : "border-transparent text-muted-foreground hover:text-platinum hover:bg-secondary/10"
+          }`}
+        >
+          Muro de Protección (Firewall)
+        </button>
+        <button
+          onClick={() => setSubTab("observability")}
+          className={`px-4 py-2 text-xs font-mono font-bold tracking-wider uppercase transition-all border-b-2 rounded-t-xl cursor-pointer shrink-0 ${
+            subTab === "observability"
+              ? "border-electric text-electric bg-electric/5"
+              : "border-transparent text-muted-foreground hover:text-platinum hover:bg-secondary/10"
+          }`}
+        >
+          Telemetría & Observabilidad (24 Núcleos)
+        </button>
+        <button
+          onClick={() => setSubTab("compliance")}
+          className={`px-4 py-2 text-xs font-mono font-bold tracking-wider uppercase transition-all border-b-2 rounded-t-xl cursor-pointer shrink-0 ${
+            subTab === "compliance"
+              ? "border-emerald-500 text-emerald-400 bg-emerald-500/5"
+              : "border-transparent text-muted-foreground hover:text-platinum hover:bg-secondary/10"
+          }`}
+        >
+          Auditoría & Compliance
+        </button>
+        <button
+          onClick={() => setSubTab("skills")}
+          className={`px-4 py-2 text-xs font-mono font-bold tracking-wider uppercase transition-all border-b-2 rounded-t-xl cursor-pointer shrink-0 ${
+            subTab === "skills"
+              ? "border-indigo-500 text-indigo-400 bg-indigo-500/5"
+              : "border-transparent text-muted-foreground hover:text-platinum hover:bg-secondary/10"
+          }`}
+        >
+          Matriz de Skills (DOI)
+        </button>
+      </div>
 
-            {/* Form Inputs */}
-            <div className="space-y-3 font-mono text-xs">
-              <div>
-                <label className="block text-[10.5px] text-muted-foreground mb-1">
-                  Actor Identidad (PII):
-                </label>
-                <input
-                  type="text"
-                  value={customActor}
-                  onChange={(e) => setCustomActor(e.target.value)}
-                  className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none focus:border-red-500 font-mono"
-                />
-              </div>
+      {subTab === "observability" ? (
+        <Suspense fallback={<PanelLoading />}>
+          <ObservabilityPanel />
+        </Suspense>
+      ) : subTab === "compliance" ? (
+        <Suspense fallback={<PanelLoading />}>
+          <SovereignCompliancePanel />
+        </Suspense>
+      ) : subTab === "skills" ? (
+        <Suspense fallback={<PanelLoading />}>
+          <SovereignSkillsPanel />
+        </Suspense>
+      ) : (
+        <>
+          {/* Main Grid split */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* LEFT COMPONENT: Simulation & Interactive Event Pipeline */}
+            <div className="lg:col-span-5 space-y-6">
+              <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/10">
+                  <Activity className="size-4 text-red-400" />
+                  <h3 className="text-xs font-bold font-mono text-platinum uppercase tracking-wider">
+                    Simulador de Amenazas Reales (Pipeline Eval)
+                  </h3>
+                </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10.5px] text-muted-foreground mb-1">
-                    IP Origen:
-                  </label>
-                  <input
-                    type="text"
-                    value={customSource}
-                    onChange={(e) => setCustomSource(e.target.value)}
-                    className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none focus:border-red-500 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10.5px] text-muted-foreground mb-1">
-                    Clase Recurso:
-                  </label>
-                  <select
-                    value={customResource}
-                    onChange={(e) => setCustomResource(e.target.value)}
-                    className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none cursor-pointer font-mono"
-                  >
-                    <option value="research_corpus">Research Corpus (Público)</option>
-                    <option value="credential_store">Credential Store (Privado)</option>
-                    <option value="private_keys">Private Keys (Soberano)</option>
-                    <option value="audit_ledger">Audit Logs Ledger</option>
-                  </select>
-                </div>
-              </div>
+                {/* Form Inputs */}
+                <div className="space-y-3 font-mono text-xs">
+                  <div>
+                    <label className="block text-[10.5px] text-muted-foreground mb-1">
+                      Actor Identidad (PII):
+                    </label>
+                    <input
+                      type="text"
+                      value={customActor}
+                      onChange={(e) => setCustomActor(e.target.value)}
+                      className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none focus:border-red-500 font-mono"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10.5px] text-muted-foreground mb-1">Acción:</label>
-                  <input
-                    type="text"
-                    value={customAction}
-                    onChange={(e) => setCustomAction(e.target.value)}
-                    className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10.5px] text-muted-foreground mb-1">
-                    Frecuencia de Reqs:
-                  </label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    max="1"
-                    value={customRate}
-                    onChange={(e) => setCustomRate(parseFloat(e.target.value))}
-                    className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10.5px] text-muted-foreground mb-1">
-                  Volumen de Datos Exportado:
-                </label>
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  max="1"
-                  value={customVolume}
-                  onChange={(e) => setCustomVolume(parseFloat(e.target.value))}
-                  className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none font-mono"
-                />
-              </div>
-
-              {/* Boolean Signals */}
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                <label className="flex items-center gap-2 p-2.5 rounded-xl bg-secondary/5 border border-border/10 cursor-pointer hover:bg-secondary/10 transition-all select-none">
-                  <input
-                    type="checkbox"
-                    checked={secretPattern}
-                    onChange={(e) => setSecretPattern(e.target.checked)}
-                    className="rounded border-border/40 text-red-500 focus:ring-red-500 cursor-pointer"
-                  />
-                  <span className="text-[10px] text-platinum font-semibold leading-tight">
-                    Claves Detectadas
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 p-2.5 rounded-xl bg-secondary/5 border border-border/10 cursor-pointer hover:bg-secondary/10 transition-all select-none">
-                  <input
-                    type="checkbox"
-                    checked={massDownload}
-                    onChange={(e) => setMassDownload(e.target.checked)}
-                    className="rounded border-border/40 text-red-500 focus:ring-red-500 cursor-pointer"
-                  />
-                  <span className="text-[10px] text-platinum font-semibold leading-tight">
-                    Descarga Masiva
-                  </span>
-                </label>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  onClick={processPipeline}
-                  disabled={processingState === "processing"}
-                  className="w-full py-2.5 rounded-xl bg-red-500 hover:bg-red-600 disabled:bg-red-800 text-platinum text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-red-500/10 cursor-pointer"
-                >
-                  {processingState === "processing" ? (
-                    <>
-                      <RefreshCw className="size-3.5 animate-spin" /> Procesando en Muro...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="size-3.5" /> Ingestar Evento de Seguridad
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Active Evaluation Output Panel */}
-          {lastResult && (
-            <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 font-mono text-[11px] space-y-3 animate-rise">
-              <div className="flex items-center justify-between pb-2 border-b border-border/10 text-platinum">
-                <span>Resultado de Ingesta (AuditLogger):</span>
-                <span>{lastResult.event_id}</span>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Actor Hasheado:</span>
-                  <span className="text-platinum font-semibold">{lastResult.sanitizedActor}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Origen Ofuscado:</span>
-                  <span className="text-platinum font-semibold">{lastResult.sanitizedSource}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Score de Anomalía ML:</span>
-                  <span className="text-red-400 font-bold">
-                    {(lastResult.score * 100).toFixed(0)}%
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Decisión de Control:</span>
-                  {getDecisionBadge(lastResult.decision)}
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Nivel Aegis Escalado:</span>
-                  <span className="text-platinum">{getLevelLabel(lastResult.aegis_level)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Modelo de Aprendizaje:</span>
-                  <span className="text-emerald-400">{lastResult.learning_mode.toUpperCase()}</span>
-                </div>
-                {lastResult.reasons.length > 0 && (
-                  <div className="pt-1.5">
-                    <span className="text-muted-foreground block mb-1">Señales Detectadas:</span>
-                    <div className="flex flex-wrap gap-1">
-                      {lastResult.reasons.map((r) => (
-                        <span
-                          key={r}
-                          className="bg-red-500/15 border border-red-500/20 text-red-400 px-1.5 py-0.5 rounded text-[9.5px]"
-                        >
-                          {r}
-                        </span>
-                      ))}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10.5px] text-muted-foreground mb-1">
+                        IP Origen:
+                      </label>
+                      <input
+                        type="text"
+                        value={customSource}
+                        onChange={(e) => setCustomSource(e.target.value)}
+                        className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none focus:border-red-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10.5px] text-muted-foreground mb-1">
+                        Clase Recurso:
+                      </label>
+                      <select
+                        value={customResource}
+                        onChange={(e) => setCustomResource(e.target.value)}
+                        className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none cursor-pointer font-mono"
+                      >
+                        <option value="research_corpus">Research Corpus (Público)</option>
+                        <option value="credential_store">Credential Store (Privado)</option>
+                        <option value="private_keys">Private Keys (Soberano)</option>
+                        <option value="audit_ledger">Audit Logs Ledger</option>
+                      </select>
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
 
-        {/* RIGHT COMPONENT: 7 Layers view & Cryptographic Audit Ledger */}
-        <div className="lg:col-span-7 space-y-6">
-          {/* Advanced Cryptographic Secrets Config */}
-          <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4 font-mono text-xs">
-            <div className="flex items-center gap-2 pb-2 border-b border-border/10">
-              <Database className="size-4 text-emerald-400" />
-              <h3 className="text-xs font-bold text-platinum uppercase tracking-wider">
-                Configuración de Firma K.M.S. & Privacidad
-              </h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] text-muted-foreground mb-1">
-                  Clave Firma Ledger (HMAC Secret):
-                </label>
-                <input
-                  type="password"
-                  value={auditSecret}
-                  onChange={(e) => {
-                    setAuditSecret(e.target.value);
-                    setVerifyStatus("idle");
-                  }}
-                  className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none focus:border-emerald-400 font-mono text-[11px]"
-                />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10.5px] text-muted-foreground mb-1">
+                        Acción:
+                      </label>
+                      <input
+                        type="text"
+                        value={customAction}
+                        onChange={(e) => setCustomAction(e.target.value)}
+                        className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10.5px] text-muted-foreground mb-1">
+                        Frecuencia de Reqs:
+                      </label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        value={customRate}
+                        onChange={(e) => setCustomRate(parseFloat(e.target.value))}
+                        className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] text-muted-foreground mb-1">
+                      Volumen de Datos Exportado:
+                    </label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      max="1"
+                      value={customVolume}
+                      onChange={(e) => setCustomVolume(parseFloat(e.target.value))}
+                      className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none font-mono"
+                    />
+                  </div>
+
+                  {/* Boolean Signals */}
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-secondary/5 border border-border/10 cursor-pointer hover:bg-secondary/10 transition-all select-none">
+                      <input
+                        type="checkbox"
+                        checked={secretPattern}
+                        onChange={(e) => setSecretPattern(e.target.checked)}
+                        className="rounded border-border/40 text-red-500 focus:ring-red-500 cursor-pointer"
+                      />
+                      <span className="text-[10px] text-platinum font-semibold leading-tight">
+                        Claves Detectadas
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-secondary/5 border border-border/10 cursor-pointer hover:bg-secondary/10 transition-all select-none">
+                      <input
+                        type="checkbox"
+                        checked={massDownload}
+                        onChange={(e) => setMassDownload(e.target.checked)}
+                        className="rounded border-border/40 text-red-500 focus:ring-red-500 cursor-pointer"
+                      />
+                      <span className="text-[10px] text-platinum font-semibold leading-tight">
+                        Descarga Masiva
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      onClick={processPipeline}
+                      disabled={processingState === "processing"}
+                      className="w-full py-2.5 rounded-xl bg-red-500 hover:bg-red-600 disabled:bg-red-800 text-platinum text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-red-500/10 cursor-pointer"
+                    >
+                      {processingState === "processing" ? (
+                        <>
+                          <RefreshCw className="size-3.5 animate-spin" /> Procesando en Muro...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="size-3.5" /> Ingestar Evento de Seguridad
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-[10px] text-muted-foreground mb-1">
-                  Clave Ofuscación de Identidad:
-                </label>
-                <input
-                  type="password"
-                  value={hashSecret}
-                  onChange={(e) => {
-                    setHashSecret(e.target.value);
-                    setVerifyStatus("idle");
-                  }}
-                  className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none focus:border-emerald-400 font-mono text-[11px]"
-                />
+
+              {/* Active Evaluation Output Panel */}
+              {lastResult && (
+                <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 font-mono text-[11px] space-y-3 animate-rise">
+                  <div className="flex items-center justify-between pb-2 border-b border-border/10 text-platinum">
+                    <span>Resultado de Ingesta (AuditLogger):</span>
+                    <span>{lastResult.event_id}</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Actor Hasheado:</span>
+                      <span className="text-platinum font-semibold">
+                        {lastResult.sanitizedActor}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Origen Ofuscado:</span>
+                      <span className="text-platinum font-semibold">
+                        {lastResult.sanitizedSource}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Score de Anomalía ML:</span>
+                      <span className="text-red-400 font-bold">
+                        {(lastResult.score * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Decisión de Control:</span>
+                      {getDecisionBadge(lastResult.decision)}
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Nivel Aegis Escalado:</span>
+                      <span className="text-platinum">{getLevelLabel(lastResult.aegis_level)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Modelo de Aprendizaje:</span>
+                      <span className="text-emerald-400">
+                        {lastResult.learning_mode.toUpperCase()}
+                      </span>
+                    </div>
+                    {lastResult.reasons.length > 0 && (
+                      <div className="pt-1.5">
+                        <span className="text-muted-foreground block mb-1">
+                          Señales Detectadas:
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {lastResult.reasons.map((r) => (
+                            <span
+                              key={r}
+                              className="bg-red-500/15 border border-red-500/20 text-red-400 px-1.5 py-0.5 rounded text-[9.5px]"
+                            >
+                              {r}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT COMPONENT: 7 Layers view & Cryptographic Audit Ledger */}
+            <div className="lg:col-span-7 space-y-6">
+              {/* Advanced Cryptographic Secrets Config */}
+              <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4 font-mono text-xs">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/10">
+                  <Database className="size-4 text-emerald-400" />
+                  <h3 className="text-xs font-bold text-platinum uppercase tracking-wider">
+                    Configuración de Firma K.M.S. & Privacidad
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] text-muted-foreground mb-1">
+                      Clave Firma Ledger (HMAC Secret):
+                    </label>
+                    <input
+                      type="password"
+                      value={auditSecret}
+                      onChange={(e) => {
+                        setAuditSecret(e.target.value);
+                        setVerifyStatus("idle");
+                      }}
+                      className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none focus:border-emerald-400 font-mono text-[11px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-muted-foreground mb-1">
+                      Clave Ofuscación de Identidad:
+                    </label>
+                    <input
+                      type="password"
+                      value={hashSecret}
+                      onChange={(e) => {
+                        setHashSecret(e.target.value);
+                        setVerifyStatus("idle");
+                      }}
+                      className="w-full bg-secondary/30 border border-border/25 rounded-xl p-2 text-platinum outline-none focus:border-emerald-400 font-mono text-[11px]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* The 7 Hardening Layers visualization */}
+              <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/10">
+                  <Binary className="size-4 text-platinum" />
+                  <h3 className="text-xs font-bold font-mono text-platinum uppercase tracking-wider">
+                    Las 7 Capas de Hardening Activas (Zero Trust)
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {INITIAL_LAYERS.map((layer) => (
+                    <div
+                      key={layer.number}
+                      className="p-3 rounded-xl bg-black/30 border border-border/10 space-y-1.5 hover:border-border/20 transition-all"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[10.5px] font-bold text-platinum">
+                          {layer.name}
+                        </span>
+                        <span className="text-[9px] font-mono bg-emerald-500/10 text-emerald-400 px-1.5 rounded font-bold">
+                          {layer.status}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-snug">
+                        {layer.description}
+                      </p>
+                      <div className="text-[9px] font-mono text-electric pt-0.5 border-t border-border/5">
+                        Métrica: {layer.metric}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* INTERNAL AUTO-AUDITING LEDGER */}
+              <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-border/10">
+                  <div className="flex items-center gap-2">
+                    <Database className="size-4 text-emerald-400" />
+                    <h3 className="text-xs font-bold font-mono text-platinum uppercase tracking-wider">
+                      Ledger de Auditoría Criptográfica Inmutable (HMAC-SHA256)
+                    </h3>
+                  </div>
+                  <div className="flex gap-2 font-mono text-[10px]">
+                    <button
+                      onClick={verifyAuditLedger}
+                      disabled={auditChain.length === 0}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-platinum font-bold transition-all cursor-pointer"
+                    >
+                      Verificar Cadena
+                    </button>
+                  </div>
+                </div>
+
+                {/* Render Verification results */}
+                {verifyStatus !== "idle" && (
+                  <div
+                    className={`p-3 rounded-xl font-mono text-xs border animate-rise ${
+                      verifyStatus === "valid"
+                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                        : verifyStatus === "verifying"
+                          ? "bg-secondary/20 border-border/20 text-platinum"
+                          : "bg-red-500/10 border-red-500/20 text-red-400"
+                    }`}
+                  >
+                    {verifyStatus === "verifying" && (
+                      <div className="flex items-center gap-2">
+                        <RefreshCw className="size-4 animate-spin" /> Validando firma de cada
+                        registro con HMAC-SHA256...
+                      </div>
+                    )}
+                    {verifyStatus === "valid" && (
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="size-4" /> ¡FIRMADO Y SEGURO! Toda la cadena de
+                        bloques está íntegra y encadenada criptográficamente de forma exitosa.
+                      </div>
+                    )}
+                    {verifyStatus === "invalid" && (
+                      <div className="space-y-1">
+                        <div className="font-bold flex items-center gap-2 text-red-500">
+                          <ShieldAlert className="size-4 animate-bounce" /> ¡VIOLACIÓN DE INTEGRIDAD
+                          DETECTADA!
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          El bloque de auditoría #
+                          {corruptedIndex !== null ? corruptedIndex + 1 : "?"} ha sido manipulado
+                          directamente en memoria. El hash actual no se conecta al bloque previo.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Log output list */}
+                <div className="space-y-2 max-h-[185px] overflow-y-auto pr-1">
+                  {auditChain.length === 0 ? (
+                    <div className="text-center p-6 border border-dashed border-border/15 rounded-xl text-muted-foreground italic font-mono text-xs">
+                      Sin registros en el ledger. Ingesta un evento de seguridad arriba para generar
+                      un bloque criptográfico.
+                    </div>
+                  ) : (
+                    auditChain.map((block, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-xl bg-black/40 border text-[10.5px] font-mono space-y-1.5 transition-all ${
+                          corruptedIndex === idx
+                            ? "border-red-500/50 bg-red-500/5"
+                            : "border-border/10"
+                        }`}
+                      >
+                        <div className="flex justify-between items-center text-platinum">
+                          <span className="font-bold text-electric">Bloque #{idx + 1}</span>
+                          <span className="text-[9.5px] text-muted-foreground">
+                            {block.timestamp}
+                          </span>
+                        </div>
+                        <div className="text-[9.5px] text-muted-foreground space-y-0.5 font-mono">
+                          <div className="truncate">Prev Hash: {block.previous_hash}</div>
+                          <div className="truncate text-platinum font-bold">
+                            Block Hash: {block.record_hash}
+                          </div>
+                        </div>
+                        <div className="p-1.5 bg-secondary/5 border border-border/5 rounded text-[9.5px] flex items-center justify-between">
+                          <div className="flex gap-1">
+                            <span className="text-muted-foreground">Decisión:</span>
+                            <span className="font-bold text-platinum">
+                              {block.payload.decision.toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="flex gap-1">
+                            <span className="text-muted-foreground">Anomalía:</span>
+                            <span className="text-red-400 font-bold">{block.payload.score}</span>
+                          </div>
+                          <button
+                            onClick={() => triggerSelfInterventionAttack(idx)}
+                            className="text-[9px] text-red-400 hover:text-red-300 underline font-semibold cursor-pointer shrink-0"
+                          >
+                            [Alterar Log]
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
-          {/* The 7 Hardening Layers visualization */}
+          {/* GORGEOUS REAL RECHARTS VISUALIZATION GRAPH OF REAL THREAT TELEMETRY */}
           <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4">
             <div className="flex items-center gap-2 pb-2 border-b border-border/10">
-              <Binary className="size-4 text-platinum" />
+              <Activity className="size-4 text-red-400 animate-pulse" />
               <h3 className="text-xs font-bold font-mono text-platinum uppercase tracking-wider">
-                Las 7 Capas de Hardening Activas (Zero Trust)
+                Telemetría de Anomalías de Tráfico y Escalación de Muro
               </h3>
             </div>
+            <div className="h-[220px] w-full font-mono text-[10px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="name" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" domain={[0, 1]} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#11141c",
+                      borderColor: "rgba(255,255,255,0.1)",
+                      borderRadius: "8px",
+                      color: "#e2e8f0",
+                    }}
+                  />
+                  <Legend />
+                  <Line
+                    name="Score de Anomalía"
+                    type="monotone"
+                    dataKey="score"
+                    stroke="#f43f5e"
+                    strokeWidth={2}
+                    activeDot={{ r: 8 }}
+                  />
+                  <Line
+                    name="Nivel Muro M3"
+                    type="step"
+                    dataKey="level"
+                    stroke="#6366f1"
+                    strokeWidth={2}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {INITIAL_LAYERS.map((layer) => (
+          {/* FOOTER: Interconnection network metrics of the heptafederated modules */}
+          <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-border/10">
+              <div className="flex items-center gap-2">
+                <Cpu className="size-4 text-emerald-400" />
+                <h3 className="text-sm font-bold font-mono text-platinum uppercase tracking-wider">
+                  Ecosistema Heptafederado de Isabella: Sincronización entre 12 Módulos / 24 Núcleos
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono text-muted-foreground">Canal S0 Activo</span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5 text-center font-mono text-[11px]">
+              {[
+                {
+                  id: "CROWN",
+                  name: "CROWN Engine",
+                  status: "ONLINE",
+                  action: "Arbitraje",
+                  latency: "2ms",
+                },
+                {
+                  id: "ISA",
+                  name: "ISA Core",
+                  status: "ONLINE",
+                  action: "Presencia Emocional",
+                  latency: "24ms",
+                },
+                {
+                  id: "SOPHIA",
+                  name: "SOPHIA Hub",
+                  status: "ONLINE",
+                  action: "Rigor Epistémico",
+                  latency: "14ms",
+                },
+                {
+                  id: "ORION",
+                  name: "ORION Builder",
+                  status: "ONLINE",
+                  action: "Ejecución Activa",
+                  latency: "3ms",
+                },
+                {
+                  id: "ARGUS",
+                  name: "ARGUS Sentinel",
+                  status: "ONLINE",
+                  action: "Política Zero-Trust",
+                  latency: "1ms",
+                },
+              ].map((m) => (
                 <div
-                  key={layer.number}
-                  className="p-3 rounded-xl bg-black/30 border border-border/10 space-y-1.5 hover:border-border/20 transition-all"
+                  key={m.id}
+                  className="p-3 rounded-xl bg-black/20 border border-border/10 space-y-1 hover:border-border/20 transition-all"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10.5px] font-bold text-platinum">
-                      {layer.name}
-                    </span>
-                    <span className="text-[9px] font-mono bg-emerald-500/10 text-emerald-400 px-1.5 rounded font-bold">
-                      {layer.status}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground leading-snug">
-                    {layer.description}
-                  </p>
-                  <div className="text-[9px] font-mono text-electric pt-0.5 border-t border-border/5">
-                    Métrica: {layer.metric}
+                  <span className="block font-bold text-platinum">{m.id}</span>
+                  <span className="block text-[9px] text-muted-foreground">{m.name}</span>
+                  <span className="block text-[9px] text-emerald-400 font-bold">🟢 {m.status}</span>
+                  <div className="text-[9px] text-muted-foreground border-t border-border/5 pt-1.5 mt-1.5 flex justify-between">
+                    <span>Lat: {m.latency}</span>
+                    <span className="text-electric">{m.action}</span>
                   </div>
                 </div>
               ))}
             </div>
           </div>
+        </>
+      )}
 
-          {/* INTERNAL AUTO-AUDITING LEDGER */}
-          <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-border/10">
-              <div className="flex items-center gap-2">
-                <Database className="size-4 text-emerald-400" />
-                <h3 className="text-xs font-bold font-mono text-platinum uppercase tracking-wider">
-                  Ledger de Auditoría Criptográfica Inmutable (HMAC-SHA256)
-                </h3>
-              </div>
-              <div className="flex gap-2 font-mono text-[10px]">
-                <button
-                  onClick={verifyAuditLedger}
-                  disabled={auditChain.length === 0}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-platinum font-bold transition-all cursor-pointer"
-                >
-                  Verificar Cadena
-                </button>
-              </div>
+      {/* Floating Toast notification system for self-healing recovery logs */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className="pointer-events-auto p-4 rounded-xl bg-black/90 border border-emerald-500/30 text-emerald-400 shadow-2xl backdrop-blur-xl flex flex-col gap-1 font-mono text-[10.5px] animate-rise"
+          >
+            <div className="flex justify-between items-center pb-1 border-b border-white/5">
+              <span className="font-bold flex items-center gap-1 uppercase tracking-wider text-emerald-400">
+                <span className="size-2 rounded-full bg-emerald-500 animate-ping" />
+                S0 AUTOREPARACIÓN COMPLETADA
+              </span>
+              <span className="text-[9px] text-muted-foreground">{toast.timestamp}</span>
             </div>
-
-            {/* Render Verification results */}
-            {verifyStatus !== "idle" && (
-              <div
-                className={`p-3 rounded-xl font-mono text-xs border animate-rise ${
-                  verifyStatus === "valid"
-                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                    : verifyStatus === "verifying"
-                      ? "bg-secondary/20 border-border/20 text-platinum"
-                      : "bg-red-500/10 border-red-500/20 text-red-400"
-                }`}
-              >
-                {verifyStatus === "verifying" && (
-                  <div className="flex items-center gap-2">
-                    <RefreshCw className="size-4 animate-spin" /> Validando firma de cada registro
-                    con HMAC-SHA256...
-                  </div>
-                )}
-                {verifyStatus === "valid" && (
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="size-4" /> ¡FIRMADO Y SEGURO! Toda la cadena de bloques
-                    está íntegra y encadenada criptográficamente de forma exitosa.
-                  </div>
-                )}
-                {verifyStatus === "invalid" && (
-                  <div className="space-y-1">
-                    <div className="font-bold flex items-center gap-2 text-red-500">
-                      <ShieldAlert className="size-4 animate-bounce" /> ¡VIOLACIÓN DE INTEGRIDAD
-                      DETECTADA!
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">
-                      El bloque de auditoría #{corruptedIndex !== null ? corruptedIndex + 1 : "?"}{" "}
-                      ha sido manipulado directamente en memoria. El hash actual no se conecta al
-                      bloque previo.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Log output list */}
-            <div className="space-y-2 max-h-[185px] overflow-y-auto pr-1">
-              {auditChain.length === 0 ? (
-                <div className="text-center p-6 border border-dashed border-border/15 rounded-xl text-muted-foreground italic font-mono text-xs">
-                  Sin registros en el ledger. Ingesta un evento de seguridad arriba para generar un
-                  bloque criptográfico.
-                </div>
-              ) : (
-                auditChain.map((block, idx) => (
-                  <div
-                    key={idx}
-                    className={`p-3 rounded-xl bg-black/40 border text-[10.5px] font-mono space-y-1.5 transition-all ${
-                      corruptedIndex === idx ? "border-red-500/50 bg-red-500/5" : "border-border/10"
-                    }`}
-                  >
-                    <div className="flex justify-between items-center text-platinum">
-                      <span className="font-bold text-electric">Bloque #{idx + 1}</span>
-                      <span className="text-[9.5px] text-muted-foreground">{block.timestamp}</span>
-                    </div>
-                    <div className="text-[9.5px] text-muted-foreground space-y-0.5 font-mono">
-                      <div className="truncate">Prev Hash: {block.previous_hash}</div>
-                      <div className="truncate text-platinum font-bold">
-                        Block Hash: {block.record_hash}
-                      </div>
-                    </div>
-                    <div className="p-1.5 bg-secondary/5 border border-border/5 rounded text-[9.5px] flex items-center justify-between">
-                      <div className="flex gap-1">
-                        <span className="text-muted-foreground">Decisión:</span>
-                        <span className="font-bold text-platinum">
-                          {block.payload.decision.toUpperCase()}
-                        </span>
-                      </div>
-                      <div className="flex gap-1">
-                        <span className="text-muted-foreground">Anomalía:</span>
-                        <span className="text-red-400 font-bold">{block.payload.score}</span>
-                      </div>
-                      <button
-                        onClick={() => triggerSelfInterventionAttack(idx)}
-                        className="text-[9px] text-red-400 hover:text-red-300 underline font-semibold cursor-pointer shrink-0"
-                      >
-                        [Alterar Log]
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* GORGEOUS REAL RECHARTS VISUALIZATION GRAPH OF REAL THREAT TELEMETRY */}
-      <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4">
-        <div className="flex items-center gap-2 pb-2 border-b border-border/10">
-          <Activity className="size-4 text-red-400 animate-pulse" />
-          <h3 className="text-xs font-bold font-mono text-platinum uppercase tracking-wider">
-            Telemetría de Anomalías de Tráfico y Escalación de Muro
-          </h3>
-        </div>
-        <div className="h-[220px] w-full font-mono text-[10px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="name" stroke="#94a3b8" />
-              <YAxis stroke="#94a3b8" domain={[0, 1]} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#11141c",
-                  borderColor: "rgba(255,255,255,0.1)",
-                  borderRadius: "8px",
-                  color: "#e2e8f0",
-                }}
-              />
-              <Legend />
-              <Line
-                name="Score de Anomalía"
-                type="monotone"
-                dataKey="score"
-                stroke="#f43f5e"
-                strokeWidth={2}
-                activeDot={{ r: 8 }}
-              />
-              <Line
-                name="Nivel Muro M3"
-                type="step"
-                dataKey="level"
-                stroke="#6366f1"
-                strokeWidth={2}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* FOOTER: Interconnection network metrics of the heptafederated modules */}
-      <div className="p-5 rounded-2xl bg-secondary/10 border border-border/15 space-y-4">
-        <div className="flex items-center justify-between pb-2 border-b border-border/10">
-          <div className="flex items-center gap-2">
-            <Cpu className="size-4 text-emerald-400" />
-            <h3 className="text-sm font-bold font-mono text-platinum uppercase tracking-wider">
-              Ecosistema Heptafederado de Isabella: Sincronización entre 12 Módulos / 24 Núcleos
-            </h3>
-          </div>
-          <span className="text-[10px] font-mono text-muted-foreground">Canal S0 Activo</span>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5 text-center font-mono text-[11px]">
-          {[
-            {
-              id: "CROWN",
-              name: "CROWN Engine",
-              status: "ONLINE",
-              action: "Arbitraje",
-              latency: "2ms",
-            },
-            {
-              id: "ISA",
-              name: "ISA Core",
-              status: "ONLINE",
-              action: "Presencia Emocional",
-              latency: "24ms",
-            },
-            {
-              id: "SOPHIA",
-              name: "SOPHIA Hub",
-              status: "ONLINE",
-              action: "Rigor Epistémico",
-              latency: "14ms",
-            },
-            {
-              id: "ORION",
-              name: "ORION Builder",
-              status: "ONLINE",
-              action: "Ejecución Activa",
-              latency: "3ms",
-            },
-            {
-              id: "ARGUS",
-              name: "ARGUS Sentinel",
-              status: "ONLINE",
-              action: "Política Zero-Trust",
-              latency: "1ms",
-            },
-          ].map((m) => (
-            <div
-              key={m.id}
-              className="p-3 rounded-xl bg-black/20 border border-border/10 space-y-1 hover:border-border/20 transition-all"
+            <p className="text-white leading-relaxed pt-1">{toast.message}</p>
+            <button
+              onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+              className="text-[9px] text-muted-foreground hover:text-white self-end font-semibold pt-1 cursor-pointer"
             >
-              <span className="block font-bold text-platinum">{m.id}</span>
-              <span className="block text-[9px] text-muted-foreground">{m.name}</span>
-              <span className="block text-[9px] text-emerald-400 font-bold">🟢 {m.status}</span>
-              <div className="text-[9px] text-muted-foreground border-t border-border/5 pt-1.5 mt-1.5 flex justify-between">
-                <span>Lat: {m.latency}</span>
-                <span className="text-electric">{m.action}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+              Cerrar (Close)
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );

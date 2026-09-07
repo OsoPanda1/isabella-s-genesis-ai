@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { Activity, ShieldAlert, Cpu, Terminal, Radio, Volume2, VolumeX, Play } from "lucide-react";
+import { Activity, ShieldAlert, Cpu, Terminal, Radio, Volume2, VolumeX } from "lucide-react";
 
 export interface IsabellaRemoteTelemetryPayload {
   elapsed: number;
@@ -36,7 +36,12 @@ function IsabellaNeuralCore({
     if (!mount) return;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      mount.clientWidth / mount.clientHeight,
+      0.1,
+      1000,
+    );
     camera.position.z = 120;
 
     const renderer = new THREE.WebGLRenderer({
@@ -168,33 +173,41 @@ export function IsabellaRemote({
   }, [addLog, onRemoteSignal]);
 
   // Inicialización de WebAudio API Sintetizada
-  const triggerTone = useCallback((freq = 440, duration = 0.1) => {
-    if (!isAudioActive) return;
-    try {
-      if (!audioContextRef.current) {
-        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        audioContextRef.current = new AudioCtx();
+  const triggerTone = useCallback(
+    (freq = 440, duration = 0.1) => {
+      if (!isAudioActive) return;
+      try {
+        if (!audioContextRef.current) {
+          const AudioCtx =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          audioContextRef.current = new AudioCtx();
+        }
+        if (audioContextRef.current.state === "suspended") {
+          void audioContextRef.current.resume();
+        }
+
+        const osc = audioContextRef.current.createOscillator();
+        const gain = audioContextRef.current.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, audioContextRef.current.currentTime);
+        gain.gain.setValueAtTime(0.05, audioContextRef.current.currentTime);
+        gain.gain.exponentialRampToValueAtTime(
+          0.0001,
+          audioContextRef.current.currentTime + duration,
+        );
+
+        osc.connect(gain);
+        gain.connect(audioContextRef.current.destination);
+
+        osc.start();
+        osc.stop(audioContextRef.current.currentTime + duration);
+      } catch {
+        // AudioContext bloqueado o restringido por políticas de usuario
       }
-      if (audioContextRef.current.state === "suspended") {
-        void audioContextRef.current.resume();
-      }
-
-      const osc = audioContextRef.current.createOscillator();
-      const gain = audioContextRef.current.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(freq, audioContextRef.current.currentTime);
-      gain.gain.setValueAtTime(0.05, audioContextRef.current.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.0001, audioContextRef.current.currentTime + duration);
-
-      osc.connect(gain);
-      gain.connect(audioContextRef.current.destination);
-
-      osc.start();
-      osc.stop(audioContextRef.current.currentTime + duration);
-    } catch {
-      // AudioContext bloqueado o restringido por políticas de usuario
-    }
-  }, [isAudioActive]);
+    },
+    [isAudioActive],
+  );
 
   const toggleAudio = () => {
     const nextState = !isAudioActive;
@@ -205,14 +218,18 @@ export function IsabellaRemote({
   const forceDisconnectToggle = () => {
     setIsConnected((prev) => {
       const next = !prev;
-      addLog(next ? "Enlace de telemetría RESTABLECIDO" : "ALERTA: Enlace de telemetría INTERRUMPIDO");
+      addLog(
+        next ? "Enlace de telemetría RESTABLECIDO" : "ALERTA: Enlace de telemetría INTERRUMPIDO",
+      );
       if (next) triggerTone(523.25, 0.2);
       return next;
     });
   };
 
   return (
-    <div className={`relative flex flex-col h-full w-full bg-[#030508] text-platinum select-none border border-white/10 rounded-2xl overflow-hidden p-6 backdrop-blur-2xl shadow-2xl ${standaloneMode ? "min-h-dvh" : ""}`}>
+    <div
+      className={`relative flex flex-col h-full w-full bg-[#030508] text-platinum select-none border border-white/10 rounded-2xl overflow-hidden p-6 backdrop-blur-2xl shadow-2xl ${standaloneMode ? "min-h-dvh" : ""}`}
+    >
       {/* Visualizador Núcleo 3D */}
       <IsabellaNeuralCore
         intensity={telemetry.progress > 0 ? telemetry.progress : 0.5}
@@ -223,8 +240,12 @@ export function IsabellaRemote({
       <header className="relative z-10 flex items-center justify-between border-b border-white/10 pb-4 mb-6">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Radio className={`size-5 ${isConnected ? "text-emerald-400 animate-pulse" : "text-rose-500"}`} />
-            <span className={`absolute -top-1 -right-1 size-2 rounded-full ${isConnected ? "bg-emerald-400" : "bg-rose-500"}`} />
+            <Radio
+              className={`size-5 ${isConnected ? "text-emerald-400 animate-pulse" : "text-rose-500"}`}
+            />
+            <span
+              className={`absolute -top-1 -right-1 size-2 rounded-full ${isConnected ? "bg-emerald-400" : "bg-rose-500"}`}
+            />
           </div>
           <div>
             <h2 className="font-display font-bold text-sm tracking-wider text-pearl uppercase">
@@ -241,7 +262,11 @@ export function IsabellaRemote({
             onClick={toggleAudio}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
           >
-            {isAudioActive ? <Volume2 className="size-3.5 text-electric" /> : <VolumeX className="size-3.5 text-rose-400" />}
+            {isAudioActive ? (
+              <Volume2 className="size-3.5 text-electric" />
+            ) : (
+              <VolumeX className="size-3.5 text-rose-400" />
+            )}
             <span>{isAudioActive ? "AUDIO ON" : "MUTED"}</span>
           </button>
 
@@ -263,7 +288,9 @@ export function IsabellaRemote({
             <span className="font-mono text-[10px] uppercase text-muted-foreground flex items-center gap-1.5">
               <Cpu className="size-3.5 text-electric" /> RENDIMIENTO DE RENDER
             </span>
-            <span className={`px-2 py-0.5 rounded text-[9px] font-mono ${telemetry.systemHealth === "OPTIMAL" ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"}`}>
+            <span
+              className={`px-2 py-0.5 rounded text-[9px] font-mono ${telemetry.systemHealth === "OPTIMAL" ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"}`}
+            >
               {telemetry.systemHealth}
             </span>
           </div>
@@ -278,7 +305,9 @@ export function IsabellaRemote({
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-platinum/60">HEAP MEMORY:</span>
-              <span className="text-purple-400">{telemetry.memoryUsageMB ? `${telemetry.memoryUsageMB} MB` : "N/A"}</span>
+              <span className="text-purple-400">
+                {telemetry.memoryUsageMB ? `${telemetry.memoryUsageMB} MB` : "N/A"}
+              </span>
             </div>
           </div>
         </div>

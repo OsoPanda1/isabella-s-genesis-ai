@@ -68,23 +68,37 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null;
   }
 
+  // Saneamiento estricto: id, claves y colores solo admiten el alfabeto CSS
+  // esperado. Cualquier valor fuera de ese alfabeto se descarta (no se escapa:
+  // se elimina) para que una config atacante no pueda inyectar CSS/URLs.
+  const SAFE_TOKEN = /^[A-Za-z0-9_-]+$/;
+  const SAFE_COLOR =
+    /^(?:#[0-9a-fA-F]{3,8}|rgba?\([0-9.,\s/%]+\)|hsla?\([0-9.,\s/%]+\)|[a-zA-Z]+)$/;
+  const safeId = SAFE_TOKEN.test(id) ? id : "chart";
+
+  const cssByTheme = Object.entries(THEMES)
+    .map(([theme, prefix]) => {
+      const lines = colorConfig.flatMap(([key, itemConfig]) => {
+        if (!SAFE_TOKEN.test(key)) return [];
+        const color =
+          itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color;
+        if (typeof color !== "string" || !SAFE_COLOR.test(color.trim())) return [];
+        return [`  --color-${key}: ${color.trim()};`];
+      });
+      if (lines.length === 0) return null;
+      return `${prefix} [data-chart=${safeId}] {\n${lines.join("\n")}\n}`;
+    })
+    .filter((block): block is string => block !== null)
+    .join("\n");
+
+  if (!cssByTheme) {
+    return null;
+  }
+
   return (
     <style
       dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
-${colorConfig
-  .map(([key, itemConfig]) => {
-    const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color;
-    return color ? `  --color-${key}: ${color};` : null;
-  })
-  .join("\n")}
-}
-`,
-          )
-          .join("\n"),
+        __html: cssByTheme,
       }}
     />
   );

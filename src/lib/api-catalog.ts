@@ -325,9 +325,9 @@ addCrudRoutes(
   "heads",
   "cores",
   "/v1/heads/cores",
-  "núcleo de inferencia local",
+  "núcleo de inferencia federada (proveedor externo declarado)",
   { modelName: "string", status: "string" },
-  { modelName: "google/gemini-3.5-flash", status: "healthy" },
+  { modelName: "federated:gemini-3-flash", status: "contract" },
 );
 addCrudRoutes(
   "heads",

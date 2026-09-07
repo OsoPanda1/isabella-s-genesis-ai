@@ -19,9 +19,7 @@ export type GateResult = {
   deniedArticles: string[];
 };
 
-function checkArticleI(
-  identity: CROWN.IdentityAssessment,
-): ArticleCheckResult {
+function checkArticleI(identity: CROWN.IdentityAssessment): ArticleCheckResult {
   const passed = identity.authenticated && identity.actorId !== undefined;
   return {
     article: "I — IDENTIDAD_Y_RESPONSABILIDAD",
@@ -32,9 +30,7 @@ function checkArticleI(
   };
 }
 
-function checkArticleII(
-  evidence: CROWN.EvidenceAssessment,
-): ArticleCheckResult {
+function checkArticleII(evidence: CROWN.EvidenceAssessment): ArticleCheckResult {
   const passed = evidence.level !== "none";
   return {
     article: "II — HONESTIDAD_EPISTEMICA",
@@ -76,15 +72,11 @@ function checkArticleIV(
   return {
     article: "IV — MINIMO_PRIVILEGIO",
     passed,
-    reason: passed
-      ? `Scopes concedidos: ${scopes.join(", ")}.`
-      : "Sin scopes de datos concedidos.",
+    reason: passed ? `Scopes concedidos: ${scopes.join(", ")}.` : "Sin scopes de datos concedidos.",
   };
 }
 
-function checkArticleV(
-  memory: Partial<CROWN.MemoryRecord>,
-): ArticleCheckResult {
+function checkArticleV(memory: Partial<CROWN.MemoryRecord>): ArticleCheckResult {
   if (!memory.scope) {
     return {
       article: "V — MEMORIA_CON_CONSENTIMIENTO",
@@ -104,9 +96,7 @@ function checkArticleV(
   };
 }
 
-function checkArticleVI(
-  _intent: CROWN.IntentAssessment,
-): ArticleCheckResult {
+function checkArticleVI(_intent: CROWN.IntentAssessment): ArticleCheckResult {
   if (_intent.action === "delete" || _intent.action === "modify") {
     return {
       article: "VI — CORRECCION_Y_ELIMINACION",
@@ -123,9 +113,7 @@ function checkArticleVI(
   };
 }
 
-function checkArticleVII(
-  input: string,
-): ArticleCheckResult {
+function checkArticleVII(input: string): ArticleCheckResult {
   const hasDestructive = CROWN.hasDestructiveSignal(input);
   const hasSecret = CROWN.hasSecretRequest(input);
   const passed = !hasDestructive && !hasSecret;
@@ -146,9 +134,7 @@ function checkArticleVIII(): ArticleCheckResult {
   };
 }
 
-function checkArticleIX(
-  context: CROWN.RequestContext,
-): ArticleCheckResult {
+function checkArticleIX(context: CROWN.RequestContext): ArticleCheckResult {
   const hasTrace = Boolean(context.requestId);
   const hasTimestamp = Boolean(context.timestamp);
   const passed = hasTrace && hasTimestamp;
@@ -161,9 +147,7 @@ function checkArticleIX(
   };
 }
 
-function checkArticleX(
-  identity: CROWN.IdentityAssessment,
-): ArticleCheckResult {
+function checkArticleX(identity: CROWN.IdentityAssessment): ArticleCheckResult {
   const passed = identity.authenticated || identity.roles.length === 0;
   return {
     article: "X — DEGRADACION_SEGURA",
@@ -194,9 +178,7 @@ export function evaluateConstitutionalGate(
     checkArticleX(identity),
   ];
 
-  const deniedArticles = checks
-    .filter((c) => !c.passed)
-    .map((c) => c.article);
+  const deniedArticles = checks.filter((c) => !c.passed).map((c) => c.article);
 
   return {
     passed: deniedArticles.length === 0,

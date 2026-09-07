@@ -1,11 +1,10 @@
 #!/usr/bin/env node
+
 /**
  * db:verify — Verifica la estructura del esquema PostgreSQL/Supabase.
- * -----------------------------------------------------------------
- * Comprueba que existan las tablas canónicas, las extensiones y que
- * las migraciones sean aplicables. Requiere DATABASE_URL (vía psql)
- * o hace una verificación estática de las migraciones SQL.
+ * Comprueba tablas canónicas, extensiones y migraciones aplicables.
  */
+
 import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -14,20 +13,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, "../supabase/migrations");
 const databaseUrl = process.env.DATABASE_URL;
-
-const REQUIRED_TABLES = [
-  "tenants",
-  "profiles",
-  "sessions",
-  "memories",
-  "audit_events",
-  "bookpi_ledger",
-];
+const REQUIRED_TABLES = ["tenants", "profiles", "sessions", "memories", "audit_events", "bookpi_ledger"];
 
 function listMigrations() {
-  return readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
+  return readdirSync(MIGRATIONS_DIR).filter((file) => file.endsWith(".sql")).sort();
 }
 
 function staticCheck() {
@@ -37,34 +26,27 @@ function staticCheck() {
     errors.push("No hay migraciones SQL en supabase/migrations");
     return { errors, files };
   }
-  const allSql = files.map((f) => readFileSync(resolve(MIGRATIONS_DIR, f), "utf8")).join("\n");
+
+  const allSql = files.map((file) => readFileSync(resolve(MIGRATIONS_DIR, file), "utf8")).join("\n");
   for (const table of REQUIRED_TABLES) {
-    if (!new RegExp(`create table[^(]*${table}`, "i").test(allSql)) {
+    if (!new RegExp(`create\\s+table[^(]*\\b${table}\\b`, "i").test(allSql)) {
       errors.push(`Tabla canónica no encontrada en las migraciones: ${table}`);
     }
   }
-  if (!/create extension if not exists "vector"/i.test(allSql) && !/pgvector/i.test(allSql)) {
-    errors.push("Extensión pgvector no habilitada (requerida por memories.embedding)");
-  }
+
+  // Supabase permite tanto `vector` como `"vector"` y puede instalarla
+  // dentro del esquema `extensions`; ambas formas son equivalentes aquí.
+  const hasVectorExtension = /create\\s+extension\\s+if\\s+not\\s+exists\\s+["']?vector["']?/i.test(allSql) || /pgvector/i.test(allSql);
+  if (!hasVectorExtension) errors.push("Extensión pgvector no habilitada (requerida por memories.embedding)");
+
   return { errors, files };
 }
 
 if (databaseUrl) {
-  const res = spawnSync(
-    "psql",
-    [
-      databaseUrl,
-      "-tAc",
-      "select table_name from information_schema.tables where table_schema='public'",
-    ],
-    { encoding: "utf8" },
-  );
-  if (res.status === 0) {
-    const tables = (res.stdout ?? "")
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const missing = REQUIRED_TABLES.filter((t) => !tables.includes(t));
+  const result = spawnSync("psql", [databaseUrl, "-tAc", "select table_name from information_schema.tables where table_schema='public'"], { encoding: "utf8" });
+  if (result.status === 0) {
+    const tables = (result.stdout ?? "").split("\n").map((value) => value.trim()).filter(Boolean);
+    const missing = REQUIRED_TABLES.filter((table) => !tables.includes(table));
     if (missing.length) {
       console.error("Faltan tablas canónicas:", missing.join(", "));
       process.exit(1);

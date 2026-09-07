@@ -135,15 +135,18 @@
 
   /* Crystal-clear 3D tokens: reflejos especulares + iridiscencia contenida */
   --crystal-specular:
-    inset 0 1px 0 0 oklch(1 0 0 / 22%),
-    inset 0 -1px 0 0 oklch(0.78 0.13 300 / 14%),
-    inset 1px 0 0 0 oklch(1 0 0 / 8%),
-    inset -1px 0 0 0 oklch(0.68 0.13 300 / 10%);
+    inset 0 1px 0 0 oklch(1 0 0 / 22%), inset 0 -1px 0 0 oklch(0.78 0.13 300 / 14%),
+    inset 1px 0 0 0 oklch(1 0 0 / 8%), inset -1px 0 0 0 oklch(0.68 0.13 300 / 10%);
   --crystal-sheen:
     radial-gradient(120% 60% at 18% -10%, oklch(1 0 0 / 26%) 0%, transparent 55%),
     radial-gradient(80% 50% at 85% 115%, oklch(0.78 0.13 300 / 16%) 0%, transparent 60%);
-  --crystal-iridescent:
-    linear-gradient(115deg, oklch(0.7 0.2 249 / 12%) 0%, oklch(1 0 0 / 4%) 32%, oklch(0.78 0.13 300 / 13%) 68%, oklch(0.44 0.07 218 / 12%) 100%);
+  --crystal-iridescent: linear-gradient(
+    115deg,
+    oklch(0.7 0.2 249 / 12%) 0%,
+    oklch(1 0 0 / 4%) 32%,
+    oklch(0.78 0.13 300 / 13%) 68%,
+    oklch(0.44 0.07 218 / 12%) 100%
+  );
 }
 
 @layer base {
@@ -231,17 +234,14 @@
 
 @utility crystal-3d {
   position: relative;
-  background:
-    var(--crystal-sheen),
-    var(--crystal-iridescent),
-    var(--glass);
+  background: var(--crystal-sheen), var(--crystal-iridescent), var(--glass);
   border: 1px solid oklch(0.92 0.01 250 / 18%);
-  box-shadow:
-    var(--crystal-specular),
-    var(--shadow-glass);
+  box-shadow: var(--crystal-specular), var(--shadow-glass);
   backdrop-filter: blur(26px) saturate(150%);
   -webkit-backdrop-filter: blur(26px) saturate(150%);
-  transition: box-shadow 500ms cubic-bezier(0.22, 1, 0.36, 1), border-color 500ms ease;
+  transition:
+    box-shadow 500ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 500ms ease;
 }
 
 .crystal-3d-electric:hover,
@@ -500,7 +500,8 @@
   position: absolute;
   border-radius: 9999px;
   background: oklch(1 0 0 / var(--star-alpha, 0.5));
-  box-shadow: 0 0 calc(var(--star-size, 1px) * 2.2) oklch(0.97 0.02 250 / var(--star-glow-alpha, 0.4));
+  box-shadow: 0 0 calc(var(--star-size, 1px) * 2.2)
+    oklch(0.97 0.02 250 / var(--star-glow-alpha, 0.4));
 }
 
 .star-core {

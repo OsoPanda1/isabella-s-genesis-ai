@@ -60,10 +60,8 @@ export interface FeatureFlagService {
   all(): Record<string, FlagValue>;
 }
 
-const FILE_OVERRIDE_KEY = "ISABELLA_FEATURE_FLAGS";
-
-function parseOverrides(): Record<string, string> {
-  const raw = process.env[FILE_OVERRIDE_KEY];
+function parseOverrides(source: string | undefined): Record<string, string> {
+  const raw = source ?? "";
   if (!raw) return {};
   const out: Record<string, string> = {};
   for (const part of raw.split(",")) {
@@ -73,11 +71,15 @@ function parseOverrides(): Record<string, string> {
   return out;
 }
 
-export function createFeatureFlagsService(
-  overrides: Record<string, string> = parseOverrides(),
-): FeatureFlagService {
+export function createFeatureFlagsService(overrides?: Record<string, string>): FeatureFlagService {
   const cfg = config();
-  const na = cfg.NODE_ENV === "production" ? parseOverrides() : overrides;
+  // Fuente única: ISABELLA_FEATURE_FLAGS validada en env-schema (§12).
+  // En producción se ignoran overrides por parámetro y se relee del entorno
+  // validado, nunca de process.env directo.
+  const na =
+    cfg.NODE_ENV === "production"
+      ? parseOverrides(cfg.ISABELLA_FEATURE_FLAGS)
+      : (overrides ?? parseOverrides(cfg.ISABELLA_FEATURE_FLAGS));
 
   function resolve(key: FlagKey): FlagValue {
     const def = FLAGS[key];

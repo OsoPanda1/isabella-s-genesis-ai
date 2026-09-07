@@ -65,9 +65,7 @@ export function createMemoryRepository(storePath: string = STORE_PATH) {
     try {
       const raw = fs.readFileSync(storePath, "utf-8");
       const parsed = JSON.parse(raw) as Partial<MemoryStoreFile>;
-      const records = Array.isArray(parsed.records)
-        ? (parsed.records as MemoryRecord[])
-        : [];
+      const records = Array.isArray(parsed.records) ? (parsed.records as MemoryRecord[]) : [];
       const genesisChainHash =
         typeof parsed.genesisChainHash === "string" && parsed.genesisChainHash.length === 64
           ? parsed.genesisChainHash

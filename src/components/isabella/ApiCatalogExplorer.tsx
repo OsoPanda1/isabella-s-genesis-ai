@@ -157,65 +157,14 @@ export function ApiCatalogExplorer() {
       if (result.reasoningTrace && result.reasoningTrace.length > 0) {
         setActiveTab("cot");
       }
-    } catch {
-      // Fallback estocástico con simulación sintética de baja latencia para entornos aislados
-      const mockResult: SimulationResult = {
-        traceId: `trc_${Math.random().toString(36).substring(2, 9)}`,
-        contractId: entry.id,
-        method: entry.method,
-        path: entry.path,
-        governanceScore: 0.98,
-        decisionStatus: "allowed",
-        riskLevel: "LOW",
-        allowedTools: ["VectorStore.Query", "CROWN.AuditLog", "Agent.Delegate"],
-        latencyMs: Math.floor(Math.random() * 45) + 12,
-        tokensConsumed: Math.floor(Math.random() * 320) + 80,
-        routingStrategy: selectedStrategy,
-        reasoningTrace: [
-          {
-            step: 1,
-            agent: "CROWN-Governor",
-            thought: "Validando firmas criptográficas y contrato de seguridad en el Nodo Cero.",
-            durationMs: 4,
-          },
-          {
-            step: 2,
-            agent: "Router-MoE",
-            thought: `Seleccionando el experto óptimo para el contrato ${entry.path} bajo estrategia '${selectedStrategy}'.`,
-            durationMs: 8,
-          },
-          {
-            step: 3,
-            agent: "Memory-RAG",
-            thought: "Indexando contexto relacional en base de datos vectorial de Isabella.",
-            durationMs: 12,
-          },
-        ],
-        auditTrail: [
-          {
-            eventType: "AUTH_VERIFIED",
-            message: "Autenticación soberana de usuario confirmada.",
-            timestamp: new Date().toISOString(),
-          },
-          {
-            eventType: "GOVERNANCE_PASSED",
-            message: "Filtros de alineación ética C.R.O.W.N. superados sin desviaciones.",
-            timestamp: new Date().toISOString(),
-          },
-        ],
-        responsePayload: {
-          status: "SUCCESS_NATIVE",
-          contract: entry.id,
-          executionNode: "tamv-node-zero-hidalgo",
-          result: {
-            authenticated: true,
-            executionMode: "isolated_wasm",
-            payload: parsedParams,
-          },
-        },
-      };
-
-      setSimulationResult(mockResult);
+    } catch (err: unknown) {
+      // Fail-closed: sin respuesta del servidor no se inventa ningún resultado.
+      // Mostrar una auditoría fabricada sería evidencia falsa.
+      setErrorNotice(
+        err instanceof Error
+          ? `Ejecución no disponible: ${err.message}`
+          : "Ejecución no disponible: el servidor no respondió.",
+      );
     } finally {
       setIsProcessing(false);
     }

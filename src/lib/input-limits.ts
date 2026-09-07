@@ -66,3 +66,45 @@ export class LimitError extends Error {
     this.actual = actual;
   }
 }
+
+/**
+ * Safely parses a JSON body from a Request stream, enforcing a hard byte limit.
+ * Protects against compression bombs, chunked body abuse, and memory exhaustion.
+ */
+export async function parseSafeJsonBody(request: Request): Promise<unknown> {
+  const maxBytes = getInputLimits().maxBodyBytes;
+
+  if (!request.body) {
+    return {};
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        totalBytes += value.length;
+        if (totalBytes > maxBytes) {
+          throw new LimitError("BODY_TOO_LARGE", maxBytes, totalBytes);
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const completeBuffer = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    completeBuffer.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  const text = new TextDecoder().decode(completeBuffer);
+  return JSON.parse(text);
+}

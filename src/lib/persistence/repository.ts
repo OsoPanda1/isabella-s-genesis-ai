@@ -4,7 +4,7 @@
  * Implementations: Supabase (auth, audit), Neon (transactional), Redis (cache, sessions).
  */
 
-export type OperationType = 'READ' | 'WRITE' | 'DELETE' | 'AUDIT';
+export type OperationType = "READ" | "WRITE" | "DELETE" | "AUDIT";
 
 export interface AuditEntry {
   id: string;
@@ -13,9 +13,9 @@ export interface AuditEntry {
   timestamp: string;
   action: string;
   resource: string;
-  severity: 'S0' | 'S1' | 'S2' | 'S3';
+  severity: "S0" | "S1" | "S2" | "S3";
   actor: string; // hashed principal identifier
-  result: 'success' | 'failure' | 'denied';
+  result: "success" | "failure" | "denied";
   details: Record<string, unknown>;
 }
 
@@ -27,7 +27,7 @@ export interface ApiKey {
   keyPrefix: string;
   name: string;
   role: string;
-  status: 'active' | 'suspended' | 'expired' | 'revoked';
+  status: "active" | "suspended" | "expired" | "revoked";
   secretHint: string;
   scopes: string[];
   createdAt: string;
@@ -42,7 +42,7 @@ export interface ApiKey {
 export interface Tenant {
   id: string;
   slug: string;
-  tier: 'free' | 'pro' | 'enterprise' | 'sovereign';
+  tier: "free" | "pro" | "enterprise" | "sovereign";
   quotaBalance: number;
   quotaTierLimit: number;
   createdAt: string;
@@ -54,7 +54,7 @@ export interface Session {
   id: string;
   tenantId: string;
   userId: string;
-  principalType: 'user' | 'machine' | 'service';
+  principalType: "user" | "machine" | "service";
   expiresAt: string;
   createdAt: string;
 }
@@ -124,7 +124,10 @@ export interface RepositoryFactory {
   /**
    * Get adapter by type
    */
-  getAdapter<T extends { id: string }>(type: 'supabase' | 'neon' | 'redis', schema?: string): IRepository<T>;
+  getAdapter<T extends { id: string }>(
+    type: "supabase" | "neon" | "redis",
+    schema?: string,
+  ): IRepository<T>;
 
   /**
    * Get specialized API key repository
@@ -155,12 +158,7 @@ export interface RepositoryError extends Error {
 }
 
 export function isRepositoryError(error: unknown): error is RepositoryError {
-  return (
-    error instanceof Error &&
-    'code' in error &&
-    'statusCode' in error &&
-    'retryable' in error
-  );
+  return error instanceof Error && "code" in error && "statusCode" in error && "retryable" in error;
 }
 
 export { JsonFileRepository, JsonRepositoryFactory } from "./adapters/json-adapter";

@@ -3,6 +3,7 @@ import type { ApiKey } from "./persistence/repository";
 import { ApiKeyCrypto } from "./api-key-crypto";
 import type { ApiKeyRecord } from "./credential-types";
 import { config } from "./config";
+import { createApiKeyPostgresRepository } from "./repositories/api-key-repository";
 
 function recordToApiKey(r: ApiKeyRecord): Partial<ApiKey> {
   return {
@@ -28,24 +29,36 @@ function recordToApiKey(r: ApiKeyRecord): Partial<ApiKey> {
 
 function apiKeyToRecord(k: unknown): ApiKeyRecord {
   const kk = k as Record<string, unknown>;
-  return {
+  // P0-04: manejar la columna canónica `prefix` y la variante camelCase `keyPrefix`.
+  const prefix = String(kk.prefix ?? kk.keyPrefix ?? "");
+  const keyHash = String(kk.key_hash ?? kk.keyHash ?? "");
+  const record: ApiKeyRecord = {
     id: String(kk.id),
-    tenant_id: String(kk.tenantId),
-    owner_id: String(kk.ownerId),
+    tenant_id: String(kk.tenant_id ?? kk.tenantId),
+    owner_id: String(kk.owner_id ?? kk.ownerId),
     name: String(kk.name),
-    prefix: String(kk.keyPrefix),
-    key_hash: String(kk.keyHash),
+    prefix,
+    key_hash: keyHash,
     role: String(kk.role),
     scopes: (kk.scopes as string[]) ?? [],
     status: (kk.status as ApiKeyRecord["status"]) ?? "active",
-    created_at: String(kk.createdAt),
-    expires_at: (kk.expiresAt as string) ?? undefined,
-    last_used_at: (kk.lastUsedAt as string) ?? undefined,
-    revoked_at: (kk.revokedAt as string) ?? undefined,
-    rotated_from: (kk.rotatedAt as string) ?? undefined,
-    created_by: String(kk.createdBy),
+    created_at: String(kk.created_at ?? kk.createdAt),
     metadata: (kk.metadata as Record<string, unknown>) ?? {},
   };
+  const optional = {
+    expires_at: kk.expires_at ?? kk.expiresAt,
+    last_used_at: kk.last_used_at ?? kk.lastUsedAt,
+    revoked_at: kk.revoked_at ?? kk.revokedAt,
+    rotated_from: kk.rotated_from ?? kk.rotatedAt,
+    created_by: kk.created_by ?? kk.createdBy,
+  } as Record<string, unknown>;
+  for (const key of Object.keys(optional)) {
+    const value = optional[key];
+    if (value !== undefined && value !== null) {
+      (record as unknown as Record<string, unknown>)[key] = String(value);
+    }
+  }
+  return record;
 }
 
 export class ApiKeyService {
@@ -71,10 +84,19 @@ export class ApiKeyService {
     scopes: string[];
     expiresAt?: string;
   }> {
-    if (!tenantId || !ownerId || !name.trim() || scopes.length === 0 || scopes.some((scope) => !/^[a-z0-9:_-]+$/i.test(scope))) {
+    if (
+      !tenantId ||
+      !ownerId ||
+      !name.trim() ||
+      scopes.length === 0 ||
+      scopes.some((scope) => !/^[a-z0-9:_-]+$/i.test(scope))
+    ) {
       throw new Error("invalid_api_key_request");
     }
-    if (expiresInSeconds !== undefined && (!Number.isInteger(expiresInSeconds) || expiresInSeconds <= 0)) {
+    if (
+      expiresInSeconds !== undefined &&
+      (!Number.isInteger(expiresInSeconds) || expiresInSeconds <= 0)
+    ) {
       throw new Error("invalid_api_key_ttl");
     }
     const id = crypto.randomUUID();
@@ -141,37 +163,60 @@ export class ApiKeyService {
 
     const prefix = parts.slice(0, -1).join("_");
 
-    // P0-06: use indexed prefix lookup, not generic list — fail-closed if prefix not found
-    const repoWithPrefix = this.repo as unknown as { findByPrefix?: (prefix: string) => Promise<unknown> };
-    let record: unknown | null = null;
-    if (repoWithPrefix.findByPrefix) {
-      record = await repoWithPrefix.findByPrefix(prefix);
+    // P0-06/P0-13: lookup por prefix indexado. En runtime productivo la
+    // verificación de API keys corre SIN identidad de usuario (es el flujo de
+    // autenticación), por lo que NUNCA debe pasar por el adapter tenant-scoped
+    // (que exige request identity para RLS) ni por service_role.
+    const cfg = config();
+    const usePostgres = Boolean(cfg.DATABASE_URL);
+    let record: ApiKeyRecord | null = null;
+
+    if (usePostgres) {
+      const pg = createApiKeyPostgresRepository();
+      const row = await pg.findByPrefix(prefix);
+      if (row) record = apiKeyToRecord(row);
     } else {
-      const { items } = await this.repo.list("", { keyPrefix: prefix });
-      record = items[0] ?? null;
+      const repoWithPrefix = this.repo as unknown as {
+        findByPrefix?: (p: string) => Promise<unknown>;
+      };
+      if (repoWithPrefix.findByPrefix) {
+        const r = await repoWithPrefix.findByPrefix(prefix);
+        if (r) record = apiKeyToRecord(r);
+      } else {
+        const { items } = await this.repo.list("", { keyPrefix: prefix });
+        record = items[0] ? apiKeyToRecord(items[0]) : null;
+      }
     }
+
     if (!record) {
       return { success: false, error: "invalid_credential" };
     }
 
-    const rec = apiKeyToRecord(record);
-    const signatureMatch = ApiKeyCrypto.verifySecret(rawKey, rec.key_hash);
+    const signatureMatch = ApiKeyCrypto.verifySecret(rawKey, record.key_hash);
     if (!signatureMatch) {
       return { success: false, error: "invalid_credential" };
     }
 
-    if (rec.status !== "active") {
-      return { success: false, error: `credential_${rec.status}` };
+    if (record.status !== "active") {
+      return { success: false, error: `credential_${record.status}` };
     }
 
-    if (rec.expires_at && new Date(rec.expires_at).getTime() < Date.now()) {
-      await this.repo.update(rec.tenant_id, rec.id, { status: "expired" });
+    if (record.expires_at && new Date(record.expires_at).getTime() < Date.now()) {
+      if (usePostgres) {
+        await createApiKeyPostgresRepository().updateStatus(record.id, "expired");
+      } else {
+        await this.repo.update(record.tenant_id, record.id, { status: "expired" });
+      }
       return { success: false, error: "credential_expired" };
     }
 
-    await this.repo.update(rec.tenant_id, rec.id, { lastUsedAt: new Date().toISOString() });
+    if (usePostgres) {
+      await createApiKeyPostgresRepository().touchLastUsed(record.id);
+    } else {
+      await this.repo.update(record.tenant_id, record.id, { lastUsedAt: new Date().toISOString() });
+    }
 
-    return { success: true, record: rec };
+    return { success: true, record };
   }
 
   public static async revokeApiKey(id: string, tenantId: string): Promise<boolean> {
@@ -220,7 +265,10 @@ export class ApiKeyService {
     }
 
     const rec = apiKeyToRecord(existing);
-    await this.repo.update(tenantId, id, { status: "revoked", revokedAt: new Date().toISOString() });
+    await this.repo.update(tenantId, id, {
+      status: "revoked",
+      revokedAt: new Date().toISOString(),
+    });
 
     const newKey = await this.createApiKey(
       tenantId,

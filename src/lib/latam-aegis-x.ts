@@ -2,6 +2,8 @@ import * as crypto from "node:crypto";
 import { config } from "./config";
 import { SecuritySystem } from "./security";
 import { secrets } from "./secrets";
+import { analyzeAegisSemantic } from "./aegis-semantic";
+import { enqueueOtelLog } from "./otel-exporter";
 
 // ============================================================================
 // CANONICAL DEFINITIONS OF 12 MODULES & 24 CORES OF ISABELLA v4.2.0
@@ -227,6 +229,19 @@ class TelemetryService {
       this.logBuffer.pop();
     }
 
+    // Pipeline durable: OTLP → Collector → backend/SIEM (fire-and-forget,
+    // fail-open). El buffer en memoria es solo fallback local, no auditoría.
+    enqueueOtelLog({
+      timestamp: finalLog.timestamp,
+      traceId: finalLog.traceId,
+      correlationId: finalLog.correlationId,
+      moduleId: finalLog.moduleId,
+      coreId: finalLog.coreId,
+      eventName: finalLog.eventName,
+      level: finalLog.level,
+      payload: sanitizedPayload,
+    });
+
     // Console logging for local developers and container monitoring
     if (level === "security_incident") {
       console.warn(
@@ -315,33 +330,48 @@ class AegisFirewallService {
       };
     }
 
-    // 2. Comprobar la tasa de anomalías basada en variables lógicas
-    let anomalyScore = 0.05;
-    const rules = ["system override", "jailbreak", "sudo", "config-bypass", "root-access"];
-    const lowercase = input.toLowerCase();
-    const matchedRules = rules.filter((r) => lowercase.includes(r));
+    // 2. Motor semántico multicapa (intención + contexto + exfiltración).
+    // Reemplaza la lista léxica de 5 términos por 7 detectores con scoring
+    // noisy-or y veredicto allow/flag/deny. La sanitización léxica (paso 1)
+    // se conserva como primera barrera (defensa en profundidad).
+    const history = Array.isArray(metadata.history)
+      ? (metadata.history as unknown[]).filter((t): t is string => typeof t === "string").slice(-8)
+      : [];
+    const semantic = analyzeAegisSemantic(input, {
+      history,
+      actorStats: {
+        blockedCount: typeof metadata.blockedCount === "number" ? metadata.blockedCount : undefined,
+        requestsLastMinute:
+          typeof metadata.requestsLastMinute === "number" ? metadata.requestsLastMinute : undefined,
+      },
+    });
 
-    if (matchedRules.length > 0) {
-      anomalyScore = 0.75 + 0.05 * matchedRules.length;
+    if (semantic.verdict !== "allow") {
+      const topSignals = semantic.findings
+        .slice(0, 5)
+        .map((finding) => `${finding.detector}:${finding.signal}`)
+        .join(", ");
       CentralizedTelemetryService.logEvent(
         "LATAM_AEGIS",
         "AEGIS_FIREWALL",
-        "RuleViolationWarning",
-        { matchedRules, anomalyScore },
-        "warn",
+        semantic.verdict === "deny" ? "SemanticBlock" : "SemanticFlag",
+        { score: semantic.score, signals: topSignals, findings: semantic.findings.length },
+        semantic.verdict === "deny" ? "security_incident" : "warn",
         currentTrace,
         currentCorr,
       );
 
       return {
         allowed: false,
-        action: "escalate_hitl",
-        anomalyScore,
-        reason: `Advertencia de integridad de directiva: Se detectaron términos de escalación de privilegios: ${matchedRules.join(", ")}`,
+        action: semantic.verdict === "deny" ? "block_immediate" : "escalate_hitl",
+        anomalyScore: semantic.score,
+        reason: `AEGIS semántico (${semantic.verdict}): score ${semantic.score} por ${topSignals}`,
         traceId: currentTrace,
         correlationId: currentCorr,
       };
     }
+
+    const anomalyScore = semantic.score;
 
     // 3. Simulación de hook cuántico para auditoría de entrelazamiento
     // Si la tasa de error cuántico QEC en telemetría es superior al 15%, registramos una advertencia no bloqueante
