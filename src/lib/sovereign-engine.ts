@@ -260,16 +260,6 @@ public static async hydrate({
     }
   }
 
-  public static load(): DatabaseSchema {
-    assertJsonPersistenceAllowed();
->>>>>>> Stashed changes
-    try {
-      return await hydrationInFlight;
-    } finally {
-      hydrationInFlight = null;
-    }
-  }
-
   private static async hydrateFresh(): Promise<DatabaseSchema> {
     if (!isProductionRuntime()) {
       if (!memoryDb) {
