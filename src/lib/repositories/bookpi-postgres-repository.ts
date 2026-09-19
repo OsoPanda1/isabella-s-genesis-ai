@@ -604,16 +604,15 @@ export function createBookpiPostgresRepository() {
     const index = Number(originalEventId);
     if (!Number.isInteger(index) || index < 0)
       return { success: false as const, error: "Índice de bloque inválido." };
-    const byIndex =
-      await pool.query(
-        "SELECT * FROM public.bookpi_ledger WHERE tenant_id = $1 AND index = $2 LIMIT 1",
-        [requestor.tenantId, originalEventId],
-      );
-    const original = byIndex[0] ? mapRow(byIndex[0]) : null;
+    const byIndex = await pool.query(
+      "SELECT * FROM public.bookpi_ledger WHERE tenant_id = $1 AND index = $2 LIMIT 1",
+      [requestor.tenantId, index],
+    );
+    const original = byIndex.rows[0] ? mapRow(byIndex.rows[0]) : null;
     if (!original) return { success: false as const, error: "Evento original no encontrado." };
     if (original.status === "refunded")
       return { success: false as const, error: "Evento ya refundido." };
-    return this.append({
+    return append({
       tenantId: requestor.tenantId,
       userId: requestor.userId,
       operation: `refund_of_${original.index}_${reason}`,
@@ -679,6 +678,19 @@ export function createBookpiPostgresRepository() {
     }
     return { success: true as const };
   }
+
+  return {
+    readPrevious,
+    list,
+    appendOnce,
+    append,
+    batchAppend,
+    query,
+    prune,
+    pruneInactive,
+    refund,
+    verifyIntegrity,
+  };
 }
 
 /**
