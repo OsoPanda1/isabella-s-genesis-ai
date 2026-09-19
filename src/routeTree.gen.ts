@@ -27,6 +27,7 @@ import { Route as ApiIsabellaVoiceRouteImport } from './routes/api/isabella-voic
 import { Route as ApiMuxIntroRouteImport } from './routes/api/mux-intro'
 import { Route as ApiObservabilityRouteImport } from './routes/api/observability'
 import { Route as ApiSecurityRouteImport } from './routes/api/security'
+import { Route as ApiVideoEngineXRouteImport } from './routes/api/video-engine-x'
 import { Route as ApiAiTransparencyRouteImport } from './routes/api/ai/transparency'
 import { Route as ApiConnectGithubRouteImport } from './routes/api/connect/github'
 import { Route as ApiConnectLinearRouteImport } from './routes/api/connect/linear'
@@ -134,6 +135,11 @@ const ApiSecurityRoute = ApiSecurityRouteImport.update({
   path: '/api/security',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiVideoEngineXRoute = ApiVideoEngineXRouteImport.update({
+  id: '/api/video-engine-x',
+  path: '/api/video-engine-x',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAiTransparencyRoute = ApiAiTransparencyRouteImport.update({
   id: '/api/ai/transparency',
   path: '/api/ai/transparency',
@@ -231,6 +237,7 @@ export interface FileRoutesByFullPath {
   '/api/mux-intro': typeof ApiMuxIntroRoute
   '/api/observability': typeof ApiObservabilityRoute
   '/api/security': typeof ApiSecurityRoute
+  '/api/video-engine-x': typeof ApiVideoEngineXRoute
   '/api/ai/transparency': typeof ApiAiTransparencyRoute
   '/api/connect/github': typeof ApiConnectGithubRouteWithChildren
   '/api/connect/linear': typeof ApiConnectLinearRouteWithChildren
@@ -266,6 +273,7 @@ export interface FileRoutesByTo {
   '/api/mux-intro': typeof ApiMuxIntroRoute
   '/api/observability': typeof ApiObservabilityRoute
   '/api/security': typeof ApiSecurityRoute
+  '/api/video-engine-x': typeof ApiVideoEngineXRoute
   '/api/ai/transparency': typeof ApiAiTransparencyRoute
   '/api/connect/github': typeof ApiConnectGithubRouteWithChildren
   '/api/connect/linear': typeof ApiConnectLinearRouteWithChildren
@@ -302,6 +310,7 @@ export interface FileRoutesById {
   '/api/mux-intro': typeof ApiMuxIntroRoute
   '/api/observability': typeof ApiObservabilityRoute
   '/api/security': typeof ApiSecurityRoute
+  '/api/video-engine-x': typeof ApiVideoEngineXRoute
   '/api/ai/transparency': typeof ApiAiTransparencyRoute
   '/api/connect/github': typeof ApiConnectGithubRouteWithChildren
   '/api/connect/linear': typeof ApiConnectLinearRouteWithChildren
@@ -339,6 +348,7 @@ export interface FileRouteTypes {
     | '/api/mux-intro'
     | '/api/observability'
     | '/api/security'
+    | '/api/video-engine-x'
     | '/api/ai/transparency'
     | '/api/connect/github'
     | '/api/connect/linear'
@@ -374,6 +384,7 @@ export interface FileRouteTypes {
     | '/api/mux-intro'
     | '/api/observability'
     | '/api/security'
+    | '/api/video-engine-x'
     | '/api/ai/transparency'
     | '/api/connect/github'
     | '/api/connect/linear'
@@ -409,6 +420,7 @@ export interface FileRouteTypes {
     | '/api/mux-intro'
     | '/api/observability'
     | '/api/security'
+    | '/api/video-engine-x'
     | '/api/ai/transparency'
     | '/api/connect/github'
     | '/api/connect/linear'
@@ -445,6 +457,7 @@ export interface RootRouteChildren {
   ApiMuxIntroRoute: typeof ApiMuxIntroRoute
   ApiObservabilityRoute: typeof ApiObservabilityRoute
   ApiSecurityRoute: typeof ApiSecurityRoute
+  ApiVideoEngineXRoute: typeof ApiVideoEngineXRoute
   ApiAiTransparencyRoute: typeof ApiAiTransparencyRoute
   ApiConnectGithubRoute: typeof ApiConnectGithubRouteWithChildren
   ApiConnectLinearRoute: typeof ApiConnectLinearRouteWithChildren
@@ -578,6 +591,13 @@ declare module '@tanstack/react-router' {
       path: '/api/security'
       fullPath: '/api/security'
       preLoaderRoute: typeof ApiSecurityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/video-engine-x': {
+      id: '/api/video-engine-x'
+      path: '/api/video-engine-x'
+      fullPath: '/api/video-engine-x'
+      preLoaderRoute: typeof ApiVideoEngineXRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ai/transparency': {
@@ -775,6 +795,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMuxIntroRoute: ApiMuxIntroRoute,
   ApiObservabilityRoute: ApiObservabilityRoute,
   ApiSecurityRoute: ApiSecurityRoute,
+  ApiVideoEngineXRoute: ApiVideoEngineXRoute,
   ApiAiTransparencyRoute: ApiAiTransparencyRoute,
   ApiConnectGithubRoute: ApiConnectGithubRouteWithChildren,
   ApiConnectLinearRoute: ApiConnectLinearRouteWithChildren,
