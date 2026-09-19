@@ -10,7 +10,7 @@
   "tabs": [
     {
       "pageTitle": "Isabella's Genesis AI | Lovable",
-      "pageUrl": "https://lovable.dev/projects/f3517818-75e1-4222-ad2d-af106e9d49a0",
+      "pageUrl": "https://example.com/projects/f3517818-75e1-4222-ad2d-af106e9d49a0",
       "tabId": 1888581409,
       "isCurrent": true,
       "context": "Desarrollo activo de interfaz y prototipado"

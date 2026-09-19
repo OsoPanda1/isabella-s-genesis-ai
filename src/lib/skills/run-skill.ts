@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { isabellaSkills, IsabellaSkillId } from "./registry";
-import { evaluateAuthorization, AuthorizationContext } from "../authorization";
+import { evaluateAuthorization, type AuthorizationContext } from "../authorization";
 import { createBookpiPostgresRepository } from "../repositories/bookpi-postgres-repository";
 import { validateSkillInput, validateSkillOutput, StandardResponse } from "../api-contracts";
 
 /**
- * ISA-API Hardened Pipeline (v3.0)
- * Orquestador principal que ejecuta la política inmutable de 10 etapas.
- * Todo skill debe pasar por aquí. Nunca se invoca `skill.run()` directamente.
+ * Canonical hardened skill execution pipeline.
+ * Every skill passes identity, schema, policy, execution and durable audit gates.
  */
 export async function runIsabellaSkill(
   skillId: IsabellaSkillId,
@@ -19,49 +18,31 @@ export async function runIsabellaSkill(
     intent?: string;
     actorId?: string;
     tenantId?: string;
-    /** Rol resuelto de la identidad (requerido: sin rol no hay decisión PDP). */
     role?: string;
-    /** Si la identidad está autenticada (requerido). */
     authenticated?: boolean;
     ipAddress?: string;
     userAgent?: string;
   } = {},
 ): Promise<StandardResponse> {
-  // ==========================================================================
-  // ETAPA 1 & 2: Normalización y Correlación
-  // ==========================================================================
   const requestId = context.requestId || `req_${randomUUID()}`;
   const traceId = `trace_${randomUUID()}`;
   const apiVersion = "v3.0.0-hardened";
   const timestamp = new Date().toISOString();
-
-  // ==========================================================================
-  // ETAPA 3 & 4: Identidad y Resolución de Tenant (fail-closed, sin defaults)
-  // ==========================================================================
-  // La identidad debe venir inyectada del middleware JWT o del llamador
-  // server-side autorizado. Sin identidad explícita no hay ejecución.
   const subjectId = context.actorId;
   const tenantId = context.tenantId;
-  const ipAddress = context.ipAddress || "127.0.0.1";
+  const ipAddress = context.ipAddress || "unknown";
   const userAgent = context.userAgent || "Isabella-Agent-Stack/1.0";
-
   let decisionId: string | null = null;
 
   try {
     if (!subjectId || !tenantId || !context.role || context.authenticated === undefined) {
       throw new SecurityError(
         "IDENTITY_REQUIRED",
-        "Ejecución denegada: se requiere identidad explícita (actorId, tenantId, role, authenticated).",
+        "Ejecución denegada: identidad explícita requerida.",
       );
     }
-    // ========================================================================
-    // ETAPA 5: Validación Estricta de Esquema de Entrada (Zero Trust)
-    // ========================================================================
-    const validatedInput = validateSkillInput(skillId, input);
 
-    // ========================================================================
-    // ETAPA 6 & 7: Evaluación de Políticas PDP (C.R.O.W.N. / A.R.G.U.S.)
-    // ========================================================================
+    const validatedInput = validateSkillInput(skillId, input);
     const authContext: AuthorizationContext = {
       tenant_id: tenantId,
       subject_id: subjectId,
@@ -78,21 +59,11 @@ export async function runIsabellaSkill(
 
     const decision = await evaluateAuthorization(authContext);
     decisionId = decision.decision_id;
+    if (!decision.allow)
+      throw new SecurityError("CROWN_POLICY_DENY", "Acceso denegado por política centralizada.");
 
-    if (!decision.allow) {
-      throw new SecurityError(
-        "CROWN_POLICY_DENY",
-        "Acceso denegado por políticas de seguridad estructurales.",
-      );
-    }
-
-    // ========================================================================
-    // ETAPA 8: Operación de Dominio (Ejecutar Skill)
-    // ========================================================================
     const skill = isabellaSkills[skillId];
-    if (!skill) {
-      throw new SecurityError("TOOL_NOT_FOUND", `Skill '${skillId}' no registrado en el sistema.`);
-    }
+    if (!skill) throw new SecurityError("TOOL_NOT_FOUND", `Skill '${skillId}' no registrado.`);
 
     const skillContext: import("./contracts").SkillContext = {
       actorId: subjectId,
@@ -103,48 +74,43 @@ export async function runIsabellaSkill(
       evidence: [],
     };
 
-    // Risk Gate: Validar que el input cumpla las condiciones can() del skill
-    if (skill.canRun && !skill.canRun(validatedInput as any, skillContext)) {
+    if (
+      skill.canRun &&
+      !(skill.canRun as (input: unknown, ctx: unknown) => boolean)(validatedInput, skillContext)
+    ) {
       throw new SecurityError(
         "CROWN_OBLIGATION_FAILURE",
-        "El input no satisface los pre-requisitos funcionales del skill.",
+        "El input no satisface los prerrequisitos del skill.",
       );
     }
 
-    const skillResult = await skill.run(validatedInput as any, skillContext);
-
-    // ========================================================================
-    // ETAPA 9: Validación Estricta de Salida (Data Exfiltration Protection)
-    // ========================================================================
+    const skillResult = await skill.run(validatedInput as never, skillContext);
     const validatedOutput = validateSkillOutput(skillId, skillResult);
-
-    // ========================================================================
-    // ETAPA 10: Auditoría Inmutable (BookPI Ledger)
-    // ========================================================================
     const bookpiRepo = createBookpiPostgresRepository();
 
-    // Registrar el costo computacional del skill como transacción en el Ledger
-    const costUsd = skill.risk === "CRITICAL" ? 0.5 : skill.risk === "HIGH" ? 0.1 : 0.02;
+    // Do not invent a monetary charge. A skill is billable only when its own
+    // result explicitly declares a measured `billableCostUsd` value.
+    const outputRecord = skillResult.data as Record<string, unknown> | null;
+    const billableCostUsd =
+      outputRecord &&
+      typeof outputRecord.billableCostUsd === "number" &&
+      Number.isFinite(outputRecord.billableCostUsd)
+        ? Math.max(0, outputRecord.billableCostUsd)
+        : 0;
 
     const blockRes = await bookpiRepo.append({
-      tenantId: tenantId,
+      tenantId,
       userId: subjectId,
       operation: `SKILL_EXECUTION: ${skillId} | Decision: ${decisionId} | Intent: ${context.intent || "N/A"}`,
-      category: "skills" as any,
-      cost: costUsd,
+      category: "skills",
+      cost: billableCostUsd,
       tokens: 0,
       status: "settled",
     });
 
-    if (!blockRes.success) {
-      // Fail closed: Si la auditoría falla, la transacción de dominio debe ser revertida/rechazada.
-      throw new SecurityError(
-        "AUDIT_WRITE_FAILED",
-        "Fallo al registrar la evidencia en el Ledger Inmutable BookPI.",
-      );
-    }
+    if (!blockRes.success)
+      throw new SecurityError("AUDIT_WRITE_FAILED", "Fallo al registrar evidencia en BookPI.");
 
-    // Respuesta Estándar ISA-API
     return {
       meta: {
         request_id: requestId,
@@ -158,14 +124,12 @@ export async function runIsabellaSkill(
       error: null,
     };
   } catch (err: unknown) {
-    // Formatear error estándar ISA-API
     const isSecurityError = err instanceof SecurityError;
     const errorCode = isSecurityError ? err.code : "SYSTEM_INTERNAL_ERROR";
-    const errorMessage =
-      err instanceof Error ? err.message : "Error fatal de procesamiento cognitivo.";
-
+    const publicMessage = isSecurityError
+      ? err.message
+      : "Error interno de procesamiento cognitivo.";
     console.error(`[Pipeline Error] [${traceId}]`, err);
-
     return {
       meta: {
         request_id: requestId,
@@ -178,17 +142,14 @@ export async function runIsabellaSkill(
       data: null,
       error: {
         code: errorCode,
-        message: errorMessage,
+        message: publicMessage,
         correlation_id: requestId,
-        retryable: !isSecurityError, // Errores de seguridad NUNCA son retryables por el cliente
+        retryable: !isSecurityError,
       },
     };
   }
 }
 
-/**
- * Excepción interna para control de flujo de seguridad
- */
 class SecurityError extends Error {
   constructor(
     public code: string,

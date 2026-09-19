@@ -5,28 +5,34 @@ import type { Attachment } from "@/lib/attachments";
 // Validation schema for outgoing requests to the backend
 const ChatRequestSchema = z.object({
   text: z.string().optional(),
-  attachments: z.array(z.any()).optional(),
-  context: z.string().default("isabella"),
+  attachments: z.array(z.unknown()).optional(),
+  context: z.record(z.string(), z.unknown()).default({ source: "isabella" }),
 });
 
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 
 export function useIsabellaObservability() {
   const logLifecycleEvent = useCallback(
-    (stage: "INIT" | "SANITIZATION" | "PAYLOAD_CONSTRUCTION" | "SEND" | "SUCCESS" | "ERROR", details: any) => {
+    (
+      stage: "INIT" | "SANITIZATION" | "PAYLOAD_CONSTRUCTION" | "SEND" | "SUCCESS" | "ERROR",
+      details: unknown,
+    ) => {
       const timestamp = new Date().toISOString();
-      console.log(`[Isabella Observability] [${timestamp}] [${stage}]`, details);
-      
+      // Solo desarrollo: details puede contener texto del usuario (privacidad).
+      if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
+        console.log(`[Isabella Observability] [${timestamp}] [${stage}]`, details);
+      }
+
       // We can also dispatch an event to the window for telemetry panels
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("IsabellaChatLifecycleEvent", {
             detail: { stage, timestamp, details },
-          })
+          }),
         );
       }
     },
-    []
+    [],
   );
 
   const validatePayload = useCallback(
@@ -35,9 +41,9 @@ export function useIsabellaObservability() {
         const payload = {
           text: input,
           attachments,
-          context: "isabella", // Ensuring 'isabella' context is correctly included
+          context: { source: "isabella" },
         };
-        
+
         // Zod validation layer
         const validated = ChatRequestSchema.parse(payload);
         return validated;
@@ -46,7 +52,7 @@ export function useIsabellaObservability() {
         return null;
       }
     },
-    []
+    [],
   );
 
   return { logLifecycleEvent, validatePayload };

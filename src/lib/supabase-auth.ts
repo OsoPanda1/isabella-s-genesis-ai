@@ -17,7 +17,10 @@ import { type PrincipalIdentity, type Role } from "./rbac";
 
 /** Contrato mínimo del cliente de auth de Supabase que necesita este módulo. */
 export interface SupabaseAuthClientLike {
-  getUser: () => Promise<{ data: { user: UserLike } | null; error: { message: string } | null }>;
+  getUser: () => Promise<{
+    data: { user: UserLike } | null;
+    error: { message: string } | null;
+  }>;
 }
 
 /** Usuario mínimo de Supabase. */

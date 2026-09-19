@@ -65,11 +65,16 @@ describe("snapshot lib pura", () => {
 
 describe("restore aditivo con pool falso", () => {
   function fakePoolFactory(log) {
-    return () => ({
+    const fakeClient = {
       query: async (text) => {
         log.push(text);
-        return { rows: [] };
+        return { rows: [], rowCount: 1 };
       },
+      release: () => undefined,
+    };
+    return () => ({
+      connect: async () => fakeClient,
+      query: fakeClient.query,
       end: async () => undefined,
     });
   }
@@ -77,7 +82,12 @@ describe("restore aditivo con pool falso", () => {
   it("inserta en orden topológico con ON CONFLICT DO NOTHING", async () => {
     const log = [];
     const snapshot = sampleSnapshot();
-    snapshot.tables.profiles.push({ id: "u1", username: "op", tenant_id: "t1", role: "Operator" });
+    snapshot.tables.profiles.push({
+      id: "u1",
+      username: "op",
+      tenant_id: "t1",
+      role: "Operator",
+    });
     snapshot.tables.bookpi_ledger.push({
       index: 0,
       tenant_id: "t1",
@@ -94,8 +104,11 @@ describe("restore aditivo con pool falso", () => {
     const inserted = await runRestore("postgres://fake", snapshot, () => fakePoolFactory(log)());
     expect(inserted.tenants).toBe(1);
     expect(inserted.sovereign_state).toBe(1);
-    expect(log.length).toBeGreaterThan(0);
-    for (const statement of log) {
+    expect(log).toContain("BEGIN");
+    expect(log).toContain("COMMIT");
+    const insertStatements = log.filter((statement) => statement.startsWith("INSERT"));
+    expect(insertStatements.length).toBeGreaterThan(0);
+    for (const statement of insertStatements) {
       expect(statement.includes("ON CONFLICT DO NOTHING")).toBe(true);
     }
     const tablesInOrder = log.map((statement) => {
@@ -110,9 +123,9 @@ describe("restore aditivo con pool falso", () => {
     const log = [];
     const snapshot = sampleSnapshot();
     snapshot.tables.tenants.push({ id: "t-evil", name: "X" });
-    await expect(runRestore("postgres://fake", snapshot, () => fakePoolFactory(log)())).rejects.toThrow(
-      /Snapshot inválido/,
-    );
+    await expect(
+      runRestore("postgres://fake", snapshot, () => fakePoolFactory(log)()),
+    ).rejects.toThrow(/Snapshot inválido/);
     expect(log).toHaveLength(0);
   });
 });

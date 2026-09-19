@@ -18,6 +18,16 @@ import { createMemoryEngine, type MemoryActorRole } from "./memory-engine";
 import type { MemoryRepository } from "./repositories/memory-repository";
 import type { AuditRepository } from "./repositories/audit-repository";
 
+export interface ApprovalStore {
+  has(traceId: string, tool: string, actorId: string, tenantId: string): Promise<boolean>;
+  consume(
+    traceId: string,
+    tool: string,
+    actorId: string,
+    tenantId: string,
+  ): Promise<ApprovalGrant | null>;
+}
+
 export interface PipelineInput {
   requestId: string;
   traceId: string;
@@ -48,16 +58,43 @@ export interface PipelineResult {
   denialReason?: string;
 }
 
+async function hasMatchingApproval(
+  input: PipelineInput,
+  approvalStore?: ApprovalStore,
+): Promise<boolean> {
+  if (
+    approvalStore &&
+    input.toolRequest &&
+    (await approvalStore.has(input.traceId, input.toolRequest, input.actorId, input.tenantId))
+  ) {
+    return true;
+  }
+
+  const now = Date.now();
+  return (input.approvals ?? []).some(
+    (approval) =>
+      !approval.consumed &&
+      approval.traceId === input.traceId &&
+      approval.tool === input.toolRequest &&
+      approval.actorId === input.actorId &&
+      approval.tenantId === input.tenantId &&
+      approval.expiresAt > now,
+  );
+}
+
 export function createSovereignPipeline(opts?: {
   memoryRepository?: MemoryRepository;
   auditRepository?: AuditRepository;
+  approvalStore?: ApprovalStore;
+  killSwitchStore?: {
+    isKilled(capability: string): Promise<boolean>;
+  };
 }) {
   const memoryEngine = createMemoryEngine(opts?.memoryRepository);
   const toolRegistry = createToolRegistry();
 
   return {
     async execute(input: PipelineInput): Promise<PipelineResult> {
-      // ── FASE 1: PERCEIVE ──────────────────────────────────────
       const context: CROWN.RequestContext = {
         requestId: input.requestId,
         input: input.input,
@@ -73,11 +110,10 @@ export function createSovereignPipeline(opts?: {
         evidence: input.evidence,
       });
 
-      // ── FASE 2: CONSTITUTIONAL GATE ──────────────────────────
       const gate = evaluateConstitutionalGate(context, input.identity, input.evidence, intent);
 
       if (!gate.passed) {
-        const auditEvent = opts?.auditRepository?.append({
+        const auditEvent = await opts?.auditRepository?.append({
           traceId: input.traceId,
           correlationId: input.requestId,
           actorIp: input.actorIp,
@@ -106,7 +142,6 @@ export function createSovereignPipeline(opts?: {
         };
       }
 
-      // ── FASE 3: REMEMBER ─────────────────────────────────────
       const allowedScopes = CROWN.resolveAllowedMemoryScopes(intent, input.identity);
       const roleNames = input.identity.roles.map((role) => role.toLowerCase());
       const actorRole: MemoryActorRole = roleNames.includes("sovereignowner")
@@ -119,7 +154,7 @@ export function createSovereignPipeline(opts?: {
               ? "System"
               : "Guest";
 
-      const memoryResult = memoryEngine.retrieve({
+      const memoryResult = await memoryEngine.retrieve({
         tenantId: input.tenantId,
         actorId: input.actorId,
         role: actorRole,
@@ -128,29 +163,22 @@ export function createSovereignPipeline(opts?: {
         grantedScopes: allowedScopes as unknown as readonly CROWN.MemoryScope[],
       });
 
-      // ── FASE 4: POLICY GATE ─────────────────────────────────
       let policyResult: PolicyEvaluationResult | null = null;
       if (input.toolRequest) {
         const toolMeta = toolRegistry.lookup(input.toolRequest);
         if (toolMeta) {
-          // Human authority never turns off ARGUS. Even the sovereign owner
-          // can only approve high/critical operations explicitly.
-          const riskThreshold: "low" | "medium" = "medium";
-
-          // Frontera territorial: solo aplica si hay egress externo real.
-          // Los ejecutores del pipeline son locales; pasar tenantId como
-          // "egress" denegaría siempre herramientas territoriales legítimas.
+          const approvalGranted = await hasMatchingApproval(input, opts?.approvalStore);
           policyResult = evaluatePolicy({
             tool: toolMeta,
             territorialBoundaryEnforced: false,
             humanInTheLoop: input.identity.authenticated,
-            approvalThreshold: riskThreshold,
+            approvalThreshold: "medium",
             consentRequired: toolMeta.requiresApproval,
-            consentGranted: false,
+            consentGranted: approvalGranted,
           });
 
           if (policyResult.decision === "denied") {
-            const auditEvent = opts?.auditRepository?.append({
+            const auditEvent = await opts?.auditRepository?.append({
               traceId: input.traceId,
               correlationId: input.requestId,
               actorIp: input.actorIp,
@@ -174,16 +202,13 @@ export function createSovereignPipeline(opts?: {
         }
       }
 
-      // ── FASE 5: DECIDE (CROWN routing ya calculado) ──────────
-
-      // ── FASE 6: ACT (Execution Authority real) + AUDIT ───────
-      // Decide → Authorization → Approval → Execution → Validation → Audit.
-      // Sin toolRequest no hay ejecución (toolExecuted: false legítimo).
       let toolExecuted = false;
       if (input.toolRequest) {
         const authority = createExecutionAuthority({
           memoryRepository: opts?.memoryRepository,
           auditRepository: opts?.auditRepository,
+          approvalStore: opts?.approvalStore,
+          killSwitch: opts?.killSwitchStore,
         });
         const outcome = await authority.execute({
           tool: input.toolRequest,
@@ -198,7 +223,7 @@ export function createSovereignPipeline(opts?: {
         });
         toolExecuted = outcome.executed;
         if (!outcome.executed) {
-          const auditDeny = opts?.auditRepository?.append({
+          const auditDeny = await opts?.auditRepository?.append({
             traceId: input.traceId,
             correlationId: input.requestId,
             actorIp: input.actorIp,
@@ -220,7 +245,7 @@ export function createSovereignPipeline(opts?: {
         }
       }
 
-      const auditEvent = opts?.auditRepository?.append({
+      const auditEvent = await opts?.auditRepository?.append({
         traceId: input.traceId,
         correlationId: input.requestId,
         actorIp: input.actorIp,
@@ -251,8 +276,8 @@ export function createSovereignPipeline(opts?: {
     verifyAuditChain() {
       return (
         opts?.auditRepository?.verifyChain() ?? {
-          success: true,
-          error: "Sin repositorio de auditoría.",
+          success: false,
+          error: "Sin repositorio de auditoría; la cadena no puede verificarse.",
         }
       );
     },

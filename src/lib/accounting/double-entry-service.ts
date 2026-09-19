@@ -5,7 +5,6 @@ import type {
   TrialBalance,
   BalanceSheet,
   DoubleEntryValidation,
-  AccountType,
 } from "./types";
 
 export interface DoubleEntryService {
@@ -63,8 +62,10 @@ export function createDoubleEntryService(repository: AccountingRepository): Doub
         errors.push("Los créditos no pueden ser negativos.");
       }
       if (
-        (line.debitCents !== undefined && line.debitCents > 0) &&
-        (line.creditCents !== undefined && line.creditCents > 0)
+        line.debitCents !== undefined &&
+        line.debitCents > 0 &&
+        line.creditCents !== undefined &&
+        line.creditCents > 0
       ) {
         errors.push("Una línea no puede tener tanto débito como crédito.");
       }
@@ -104,6 +105,20 @@ export function createDoubleEntryService(repository: AccountingRepository): Doub
     const validation = validateDoubleEntry(dto);
     if (!validation.isValid) {
       return { success: false, error: validation.errors.join(" ") };
+    }
+
+    // Vía atómica cuando el repositorio la implementa (PostgreSQL real:
+    // asiento + líneas en una sola transacción, rollback total al fallar).
+    if (typeof repository.createJournalEntryAtomic === "function") {
+      try {
+        const { entry, lines } = await repository.createJournalEntryAtomic(dto);
+        return { success: true, entry, lines };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Error desconocido",
+        };
+      }
     }
 
     let tx: unknown | undefined;
@@ -152,7 +167,10 @@ export function createDoubleEntryService(repository: AccountingRepository): Doub
       }
 
       if (entry.status !== "pending") {
-        return { success: false, error: "La entrada ya está publicada o reversada" };
+        return {
+          success: false,
+          error: "La entrada ya está publicada o reversada",
+        };
       }
 
       const lines = await repository.getLedgerLinesByEntry(entryId);
@@ -194,7 +212,10 @@ export function createDoubleEntryService(repository: AccountingRepository): Doub
       }
 
       if (entry.status !== "posted") {
-        return { success: false, error: "Solo se pueden reversar entradas publicadas" };
+        return {
+          success: false,
+          error: "Solo se pueden reversar entradas publicadas",
+        };
       }
 
       const lines = await repository.getLedgerLinesByEntry(entryId);

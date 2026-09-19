@@ -64,7 +64,9 @@ export function verifySnapshot(snapshot) {
       continue;
     }
     if (rows.length !== entry.rows) {
-      errors.push(`Conteo divergente en ${entry.table}: manifiesto ${entry.rows}, real ${rows.length}.`);
+      errors.push(
+        `Conteo divergente en ${entry.table}: manifiesto ${entry.rows}, real ${rows.length}.`,
+      );
     }
     const digest = sha256Hex(JSON.stringify(canonicalize(rows)));
     if (digest !== entry.sha256) {

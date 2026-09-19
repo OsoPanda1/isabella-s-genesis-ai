@@ -76,6 +76,16 @@ export interface AccountingRepository {
   beginTransaction(): Promise<unknown>;
   commitTransaction(tx: unknown): Promise<void>;
   rollbackTransaction(tx: unknown): Promise<void>;
+
+  /**
+   * Asiento + líneas en UNA transacción atómica (opcional). Los
+   * repositorios que no la implementan usan begin/commit (no atómico:
+   * documentado en la matriz como deuda).
+   */
+  createJournalEntryAtomic?(dto: CreateJournalEntryDTO): Promise<{
+    entry: JournalEntry;
+    lines: LedgerLine[];
+  }>;
 }
 
 // Implementación in-memory para pruebas
@@ -267,7 +277,7 @@ export class InMemoryAccountingRepository implements AccountingRepository {
 
     const assets = balances
       .filter((_, idx) => accounts[idx].type === "asset")
-      .map((balance, idx) => {
+      .map((balance) => {
         const account = accounts.find((a) => a.id === balance.accountId)!;
         return {
           accountId: balance.accountId,
@@ -278,7 +288,7 @@ export class InMemoryAccountingRepository implements AccountingRepository {
 
     const liabilities = balances
       .filter((_, idx) => accounts[idx].type === "liability")
-      .map((balance, idx) => {
+      .map((balance) => {
         const account = accounts.find((a) => a.id === balance.accountId)!;
         return {
           accountId: balance.accountId,
@@ -289,7 +299,7 @@ export class InMemoryAccountingRepository implements AccountingRepository {
 
     const equity = balances
       .filter((_, idx) => accounts[idx].type === "equity")
-      .map((balance, idx) => {
+      .map((balance) => {
         const account = accounts.find((a) => a.id === balance.accountId)!;
         return {
           accountId: balance.accountId,

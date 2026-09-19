@@ -1,31 +1,124 @@
 import "./lib/error-capture";
 
+import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-import { createRequestContext, withRequestContext, getRequestContext } from "./lib/request-context";
+import { createRequestContext, withRequestContext } from "./lib/request-context";
 import { redact } from "./lib/secret-redactor";
-import { assertBodyWithinLimits, LimitError } from "./lib/input-limits";
-import { ensureRuntimeReady } from "./lib/runtime-integrity";
+import { resolveTrustedClientIp } from "./lib/trusted-client-ip";
+import { validateStartupEnvironment } from "./lib/env-validator";
+import { initOpenTelemetry, withSpan, recordMetric } from "./lib/telemetry/otel-init";
 
-type ServerEntry = {
-  fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
-};
+const envCheck = validateStartupEnvironment();
+if (!envCheck.valid && (envCheck.mode === "production" || envCheck.mode === "staging")) {
+  console.error(
+    "[C.R.O.W.N. Startup Gate] Fallo crítico de validación de entorno:",
+    envCheck.criticalMissing,
+  );
+}
+initOpenTelemetry();
 
-let serverEntryPromise: Promise<ServerEntry> | undefined;
+export async function handleRequest(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const clientIp = resolveTrustedClientIp(request);
+  const requestContext = createRequestContext({
+    clientIp,
+    method: request.method,
+    path: url.pathname,
+  });
 
-async function getServerEntry(): Promise<ServerEntry> {
-  if (!serverEntryPromise) {
-    serverEntryPromise = import("@tanstack/react-start/server-entry").then(
-      (m) => (m.default ?? m) as ServerEntry,
-    );
+  const sanitizedHeaders = new Headers(request.headers);
+  for (const header of [
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-real-ip",
+    "cf-connecting-ip",
+    "x-vercel-forwarded-for",
+  ]) {
+    sanitizedHeaders.delete(header);
   }
-  return serverEntryPromise;
+  if (clientIp !== "unknown") sanitizedHeaders.set("x-real-ip", clientIp);
+
+  let sanitizedRequest: Request;
+  try {
+    sanitizedRequest = new Request(request, { headers: sanitizedHeaders });
+  } catch {
+    const init: RequestInit & { duplex?: "half" } = {
+      method: request.method,
+      headers: sanitizedHeaders,
+      signal: request.signal,
+    };
+    if (request.method !== "GET" && request.method !== "HEAD" && request.body) {
+      init.body = request.body;
+      init.duplex = "half";
+    }
+    sanitizedRequest = new Request(request.url, init as RequestInit);
+  }
+
+  return withRequestContext(requestContext, () =>
+    withSpan(
+      `HTTP ${request.method} ${url.pathname}`,
+      async () => {
+        try {
+          const response = await handler.fetch(sanitizedRequest);
+
+          recordMetric({
+            name: "http.server.requests",
+            value: 1,
+            unit: "1",
+            attributes: {
+              method: request.method,
+              status: response.status,
+              path: url.pathname,
+            },
+          });
+
+          return withSecurityHeaders(await normalizeCatastrophicSsrResponse(response));
+        } catch (error) {
+          const captured = consumeLastCapturedError();
+          const err = captured ?? error;
+          console.error(redact(err instanceof Error ? (err.stack ?? err.message) : String(err)));
+
+          recordMetric({
+            name: "http.server.errors",
+            value: 1,
+            unit: "1",
+            attributes: {
+              method: request.method,
+              status: 500,
+              path: url.pathname,
+            },
+          });
+
+          return withSecurityHeaders(
+            new Response(renderErrorPage(), {
+              status: 500,
+              headers: {
+                "content-type": "text/html; charset=utf-8",
+                "cache-control": "no-store",
+              },
+            }),
+          );
+        }
+      },
+      {
+        kind: "SERVER",
+        attributes: {
+          "http.method": request.method,
+          "http.target": url.pathname,
+          "client.ip": clientIp,
+        },
+      },
+    ),
+  );
 }
 
-// h3 swallows in-handler throws into a normal 500 Response with body
-// {"unhandled":true,"message":"HTTPError"} — try/catch alone never fires for those.
+export default createServerEntry({ fetch: handleRequest });
+
 async function normalizeCatastrophicSsrResponse(response: Response): Promise<Response> {
   if (response.status < 500) return response;
+
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) return response;
 
@@ -34,9 +127,13 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 
   const err = consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`);
   console.error(redact(err instanceof Error ? (err.stack ?? err.message) : String(err)));
+
   return new Response(renderErrorPage(), {
     status: 500,
-    headers: { "content-type": "text/html; charset=utf-8" },
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    },
   });
 }
 
@@ -49,131 +146,44 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
-// Seguridad: headers OWASP mínimos que deben estar presentes en toda respuesta.
-// El CSP estricto se habilita primero en Report-Only: TanStack Start todavía
-// emite bootstrap inline sin nonce. El header aplicado mantiene compatibilidad,
-// mientras las violaciones recolectadas impiden afirmar que ya existe un CSP
-// estricto en producción.
 export function withSecurityHeaders(response: Response): Response {
   const headers = new Headers(response.headers);
   const setIfMissing = (name: string, value: string) => {
     if (!headers.has(name)) headers.set(name, value);
   };
+
   setIfMissing("X-Content-Type-Options", "nosniff");
   setIfMissing("X-Frame-Options", "DENY");
   setIfMissing("Referrer-Policy", "strict-origin-when-cross-origin");
-  // Modern standard: disable the legacy XSS auditor to avoid filter bypass exploits, relying strictly on strong CSP
   setIfMissing("X-XSS-Protection", "0");
   setIfMissing("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
   setIfMissing("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   setIfMissing("Cross-Origin-Opener-Policy", "same-origin");
   setIfMissing("Cross-Origin-Resource-Policy", "same-origin");
-  setIfMissing(
-    "Content-Security-Policy",
-    [
-      "default-src 'self'",
-      "img-src 'self' data: blob:",
-      "style-src 'self'",
-      // TanStack Start emits the serialized hydration bootstrap inline; without it
-      // the browser cannot find window.$_TSR and the app remains blank.
-      "script-src 'self' 'unsafe-inline'",
-      "connect-src 'self' https://generativelanguage.googleapis.com https://*.supabase.co https://*.neon.tech",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "frame-ancestors 'none'",
-      "form-action 'self'",
-      "upgrade-insecure-requests",
-    ].join("; "),
-  );
-  setIfMissing(
-    "Content-Security-Policy-Report-Only",
-    [
-      "default-src 'self'",
-      "script-src 'self' 'nonce-{REQUEST_NONCE}'",
-      "style-src 'self' 'nonce-{STYLE_NONCE}'",
-      "img-src 'self' data: blob:",
-      "font-src 'self'",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "frame-ancestors 'none'",
-      "form-action 'self'",
-      "upgrade-insecure-requests",
-    ].join("; "),
-  );
+
+  const production = process.env.NODE_ENV === "production";
+  const scriptSource = production ? "'self'" : "'self' 'unsafe-inline'";
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "upgrade-insecure-requests",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data: https:",
+    "connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.x.ai https://api.stripe.com https://stream.mux.com https://*.supabase.co",
+    "style-src 'self' 'unsafe-inline'",
+    `script-src ${scriptSource}`,
+    "worker-src 'self' blob:",
+  ].join("; ");
+
+  setIfMissing("Content-Security-Policy", csp);
+  if (production) headers.delete("Content-Security-Policy-Report-Only");
+
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
 }
-
-async function fetchWithRequestChain(
-  request: Request,
-  env: unknown,
-  ctx: unknown,
-): Promise<Response> {
-  const url = new URL(request.url);
-
-  // 1. CORRELACIÓN — contexto único por request
-  const requestContext = createRequestContext({
-    method: request.method,
-    path: url.pathname,
-    clientIp:
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      request.headers.get("x-real-ip") ??
-      "unknown",
-  });
-  void requestContext;
-
-  return withRequestContext(requestContext, async () => {
-    // 2. VALIDACIÓN DE ENTRADA — límite de body en la frontera
-    if (request.method === "POST" || request.method === "PUT" || request.method === "PATCH") {
-      const contentLength = Number(request.headers.get("content-length") ?? "0");
-      try {
-        if (contentLength > 0) assertBodyWithinLimits(contentLength);
-      } catch (error) {
-        if (error instanceof LimitError) {
-          return new Response(
-            JSON.stringify({ error: { code: error.code, message: error.message } }),
-            { status: 413, headers: { "content-type": "application/json" } },
-          );
-        }
-        throw error;
-      }
-    }
-
-    // Verifica integridad del runtime (no aborta en desarrollo, solo informa)
-    void ensureRuntimeReady(false);
-
-    // Refresh bounded by a short TTL and de-duplicated across concurrent
-    // requests; destructive paths still force a fresh hydrate themselves.
-    const { SovereignDB } = await import("./lib/sovereign-engine");
-    await SovereignDB.hydrate({ maxAgeMs: 5_000 });
-
-    // 3. HANDLER — delega al router SSR
-    const handler = await getServerEntry();
-    const response = await handler.fetch(request, env, ctx);
-    return withSecurityHeaders(await normalizeCatastrophicSsrResponse(response));
-  });
-}
-
-export default {
-  async fetch(request: Request, env: unknown, ctx: unknown) {
-    try {
-      return await fetchWithRequestChain(request, env, ctx);
-    } catch (error) {
-      const traceId = getRequestContext()?.traceId ?? "no-trace";
-      console.error(
-        redact(
-          `[${traceId}] ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-        ),
-      );
-      return withSecurityHeaders(
-        new Response(renderErrorPage(), {
-          status: 500,
-          headers: { "content-type": "text/html; charset=utf-8" },
-        }),
-      );
-    }
-  },
-};

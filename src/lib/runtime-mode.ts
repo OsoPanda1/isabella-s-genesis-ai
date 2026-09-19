@@ -1,7 +1,7 @@
 import { runtimeModeSchema, type RuntimeMode } from "./env-schema";
 
 /**
- * MODO DE EJECUCIÓN (src/lib/runtime-mode.ts)
+ * MODO DE EJECUCIÓN
  * -----------------------------------------------------------------
  * Modos: development | staging | production | emergency | maintenance.
  * Determina exigencias de configuración, comportamiento de políticas
@@ -23,21 +23,24 @@ export function isRuntimeMode(value: unknown): value is RuntimeMode {
 }
 
 /**
- * Normaliza un valor de entorno a un RuntimeMode conocido,
- * fallback por defecto a "development".
+ * Resuelve el modo de runtime.
+ * Undefined conserva el default local; un valor explícitamente inválido
+ * nunca se transforma silenciosamente en development, porque eso sería
+ * un fail-open de seguridad.
  */
 export function resolveRuntimeMode(value: string | undefined): RuntimeMode {
-  if (!value) return "development";
-  const parsed = runtimeModeSchema.safeParse(value);
-  return parsed.success ? parsed.data : "development";
+  if (value === undefined || value.trim() === "") return "development";
+  const parsed = runtimeModeSchema.safeParse(value.trim());
+  if (!parsed.success) {
+    throw new Error(`Invalid ISABELLA_RUNTIME_MODE: ${JSON.stringify(value)}`);
+  }
+  return parsed.data;
 }
 
-/** Indica si el modo impone un uso conservador (sin herramientas nuevas). */
 export function isLockedDown(mode: RuntimeMode): boolean {
   return mode === "emergency" || mode === "maintenance";
 }
 
-/** Indica si el modo es de producción/staging (exige infraestructura real). */
 export function isProductionLike(mode: RuntimeMode): boolean {
   return mode === "production" || mode === "staging";
 }

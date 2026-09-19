@@ -117,7 +117,11 @@ export function evaluateAbac(
       };
     }
   }
-  return { decision: "notApplied", policy: null, reason: "Ninguna política ABAC aplicable." };
+  return {
+    decision: "notApplied",
+    policy: null,
+    reason: "Ninguna política ABAC aplicable.",
+  };
 }
 
 export const ABAC = {

@@ -62,7 +62,10 @@ export async function ensureSessionToken(): Promise<string> {
   const response = await fetch(
     `/api/db?action=oauth-url&redirect_uri=${encodeURIComponent(`${window.location.origin}/api/db?action=oauth-callback`)}`,
   );
-  const payload = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+  const payload = (await response.json().catch(() => ({}))) as {
+    url?: string;
+    error?: string;
+  };
   if (!response.ok || !payload.url)
     throw new Error(payload.error || "ARGUS requiere una sesión OIDC válida.");
 

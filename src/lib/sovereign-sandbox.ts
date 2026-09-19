@@ -6,12 +6,17 @@ import type { AuditEntry } from "./persistence/repository";
 function isSandboxEnabled(): boolean {
   try {
     const cfg = config();
-    if (cfg.NODE_ENV === "production" || cfg.ISABELLA_RUNTIME_MODE === "production") {
-      return process.env.SANDBOX_ENABLED === "true";
+    // Contrato canónico: SANDBOX_ENABLED vía config() (§12). Default false.
+    if (cfg.SANDBOX_ENABLED === true) return true;
+    if (
+      cfg.NODE_ENV === "production" ||
+      cfg.ISABELLA_RUNTIME_MODE === "production" ||
+      cfg.ISABELLA_RUNTIME_MODE === "staging"
+    ) {
+      return false;
     }
   } catch {
-    if (process.env.NODE_ENV === "production" && process.env.SANDBOX_ENABLED !== "true")
-      return false;
+    return false;
   }
   return true;
 }
@@ -83,7 +88,11 @@ export interface IWasmExecutor {
     binary: Uint8Array,
     functionName: string,
     args: unknown[],
-  ): Promise<{ output: string; memoryConsumedBytes: number; gasTokensConsumed: number }>;
+  ): Promise<{
+    output: string;
+    memoryConsumedBytes: number;
+    gasTokensConsumed: number;
+  }>;
 }
 
 /** Ejecutor real de contenedores (a inyectar por el adaptador de orquestación). */
@@ -93,7 +102,11 @@ export interface IContainerExecutor {
     command: string[],
     envVars: Record<string, string>,
     inputPayload: string,
-  ): Promise<{ output: string; memoryConsumedBytes: number; gasTokensConsumed: number }>;
+  ): Promise<{
+    output: string;
+    memoryConsumedBytes: number;
+    gasTokensConsumed: number;
+  }>;
   deprovision(): Promise<void>;
 }
 

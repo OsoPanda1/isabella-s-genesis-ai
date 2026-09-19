@@ -131,7 +131,11 @@ export function MessageStream({
                 </span>
               </div>
 
-              <p className="whitespace-pre-wrap text-[15.5px] leading-[1.75] text-foreground/95">
+              <p
+                className="whitespace-pre-wrap text-[15.5px] leading-[1.75] text-foreground/95"
+                aria-live={m.streaming ? "polite" : undefined}
+                aria-busy={m.streaming}
+              >
                 {m.content}
                 {m.streaming && (
                   <span className="animate-caret ml-0.5 inline-block h-4 w-[7px] translate-y-0.5 bg-electric" />

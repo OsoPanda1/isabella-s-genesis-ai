@@ -2,14 +2,17 @@
  * MOTOR DE POLÍTICA — ARGUS (src/lib/policy-engine.ts)
  * -----------------------------------------------------------------
  * Evalúa riesgo, reglas y restricciones sobre una acción (fail-closed).
- * Real, sin mockdata:
- *  - Toda acción NO explícitamente permitida por política se niega.
- *  - Combina riesgo de herramienta, frontera territorial, y umbral de
- *    aprobación humana (Human in the Loop).
- *  - Produce una decisión canónica: `allowed | requires_approval | denied`.
- *  - NUNCA decide autorización de identidad: eso pertenece a
- *    `authorization.ts`. Este motor supone que el principal ya pasó
- *    autorización y evalúa la política de ejecución externa.
+ *
+ * ARGUS is deliberately narrower than identity authorization:
+ *  - authorization.ts answers "¿quién puede actuar?"
+ *  - this module answers "¿esta acción puede ejecutarse ahora?"
+ *  - execution-authority.ts consumes the decision and performs the action.
+ *
+ * Critical invariant:
+ * `requires_approval` is a real intermediate state. A missing approval MUST
+ * NOT be converted into a hard policy denial before the approval subsystem
+ * has had a chance to satisfy it. The execution authority remains fail-closed
+ * and refuses execution when the required approval is absent.
  */
 
 import type { RegisteredTool, ToolRisk } from "./tool-registry";
@@ -18,15 +21,15 @@ export type PolicyDecision = "allowed" | "requires_approval" | "denied";
 
 export interface PolicyEvaluationRequest {
   tool: RegisteredTool;
-  /** Frontera territorial activa (datos que NO pueden salir). */
+  /** Frontera territorial activa: true means this action would cross the boundary. */
   territorialBoundaryEnforced: boolean;
-  /** ¿El actor es un ser humano soberano? */
+  /** ¿Existe una autoridad humana disponible para escalar la acción? */
   humanInTheLoop: boolean;
-  /** Límite de riesgo aprobado sin escalación (default: solo low/medium). */
+  /** Límite de riesgo que puede ejecutarse sin aprobación adicional. */
   approvalThreshold: ToolRisk;
-  /** ¿Requiere consentimiento explícito? */
+  /** ¿La herramienta declara consentimiento/aprobación explícitos? */
   consentRequired: boolean;
-  /** ¿Consentimiento otorgado? */
+  /** ¿Existe una aprobación/consentimiento válido para esta ejecución? */
   consentGranted: boolean;
 }
 
@@ -36,83 +39,107 @@ export interface PolicyEvaluationResult {
   riskAssessed: ToolRisk;
   escalationRequired: boolean;
   territorialBoundaryViolation: boolean;
+  approvalRequired: boolean;
 }
 
 const RISK_ORDER: readonly ToolRisk[] = ["low", "medium", "high", "critical"];
 
 function riskExceeds(tool: ToolRisk, threshold: ToolRisk): boolean {
-  const t = RISK_ORDER.indexOf(tool);
-  const th = RISK_ORDER.indexOf(threshold);
-  return t > th;
+  const toolIndex = RISK_ORDER.indexOf(tool);
+  const thresholdIndex = RISK_ORDER.indexOf(threshold);
+  return toolIndex < 0 || thresholdIndex < 0 || toolIndex > thresholdIndex;
+}
+
+function result(
+  decision: PolicyDecision,
+  reason: string,
+  riskAssessed: ToolRisk,
+  approvalRequired: boolean,
+  territorialBoundaryViolation = false,
+): PolicyEvaluationResult {
+  return {
+    decision,
+    reason,
+    riskAssessed,
+    escalationRequired: decision === "requires_approval",
+    territorialBoundaryViolation,
+    approvalRequired,
+  };
 }
 
 /**
- * Evalúa una acción contra la política ARGUS y devuelve la decisión.
- * Fail-closed: cualquier condición no satisfecha lleva a denied.
+ * Evalúa una acción contra la política ARGUS.
+ *
+ * Orden deliberado de evaluación:
+ * 1. integridad de metadatos;
+ * 2. frontera territorial;
+ * 3. riesgo/umbral;
+ * 4. consentimiento/aprobación;
+ * 5. ejecución permitida.
+ *
+ * Las violaciones de frontera y metadatos siempre son hard-deny.
+ * La ausencia de una aprobación requerida es `requires_approval` cuando
+ * existe un humano que puede aprobar; execution-authority vuelve a verificar
+ * y niega si finalmente no existe una aprobación válida.
  */
 export function evaluatePolicy(request: PolicyEvaluationRequest): PolicyEvaluationResult {
   const { tool, territorialBoundaryEnforced } = request;
 
-  // Deny-by-default: herramienta sin metadatos de política completos.
-  if (!tool.name || !tool.risk) {
-    return {
-      decision: "denied",
-      reason: "Herramienta sin política evaluable.",
-      riskAssessed: tool.risk ?? "critical",
-      escalationRequired: false,
-      territorialBoundaryViolation: false,
-    };
+  if (!tool.name || !tool.risk || !tool.category || !tool.auditEvent) {
+    return result(
+      "denied",
+      "Herramienta sin metadatos de política completos.",
+      tool.risk ?? "critical",
+      false,
+    );
   }
 
-  // Frontera territorial: herramientas enlazadas al territorio no pueden salir.
   if (territorialBoundaryEnforced && tool.territorialBoundary) {
-    return {
-      decision: "denied",
-      reason: `Frontera territorial violada: la herramienta '${tool.name}' no puede ejecutarse en este contexto.`,
-      riskAssessed: tool.risk,
-      escalationRequired: false,
-      territorialBoundaryViolation: true,
-    };
+    return result(
+      "denied",
+      `Frontera territorial violada: la herramienta '${tool.name}' no puede ejecutarse en este contexto.`,
+      tool.risk,
+      false,
+      true,
+    );
   }
 
-  // Consentimiento requerido no otorgado => denegado (nunca aprobación delegada).
-  if (request.consentRequired && !request.consentGranted) {
-    return {
-      decision: "denied",
-      reason: "Consentimiento requerido no otorgado.",
-      riskAssessed: tool.risk,
-      escalationRequired: false,
-      territorialBoundaryViolation: false,
-    };
-  }
+  const riskRequiresApproval = riskExceeds(tool.risk, request.approvalThreshold);
+  const approvalRequired = request.consentRequired || tool.requiresApproval || riskRequiresApproval;
 
-  // Riesgo por encima del umbral => requiere aprobación humana.
-  if (riskExceeds(tool.risk, request.approvalThreshold)) {
-    if (!request.humanInTheLoop) {
-      return {
-        decision: "denied",
-        reason: `Riesgo ${tool.risk} excede el umbral sin humano en el bucle para aprobar.`,
-        riskAssessed: tool.risk,
-        escalationRequired: false,
-        territorialBoundaryViolation: false,
-      };
+  if (approvalRequired) {
+    if (request.consentGranted) {
+      return result(
+        "allowed",
+        `Aprobación válida satisface la política para '${tool.name}' (riesgo ${tool.risk}).`,
+        tool.risk,
+        true,
+      );
     }
-    return {
-      decision: "requires_approval",
-      reason: `Riesgo ${tool.risk} excede el umbral. Requiere aprobación humana.`,
-      riskAssessed: tool.risk,
-      escalationRequired: true,
-      territorialBoundaryViolation: false,
-    };
+
+    if (!request.humanInTheLoop) {
+      return result(
+        "denied",
+        `Riesgo ${tool.risk} o la herramienta '${tool.name}' requiere aprobación humana, pero no hay humano disponible.`,
+        tool.risk,
+        true,
+      );
+    }
+
+    return result(
+      "requires_approval",
+      `La acción '${tool.name}' requiere aprobación humana antes de ejecutarse.`,
+      tool.risk,
+      true,
+    );
   }
 
-  return {
-    decision: "allowed",
-    reason: `Acción '${tool.name}' permitida bajo política (riesgo ${tool.risk}).`,
-    riskAssessed: tool.risk,
-    escalationRequired: false,
-    territorialBoundaryViolation: false,
-  };
+  return result(
+    "allowed",
+    `Acción '${tool.name}' permitida bajo política (riesgo ${tool.risk}).`,
+    tool.risk,
+    false,
+  );
 }
 
 export const POLICY_ENGINE = {

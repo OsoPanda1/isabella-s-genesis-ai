@@ -1,7 +1,10 @@
 /**
  * REPOSITORY PATTERN INTERFACE
- * Abstraction layer for multi-database persistence.
- * Implementations: Supabase (auth, audit), Neon (transactional), Redis (cache, sessions).
+ *
+ * PostgreSQL/Neon is the authoritative durable state provider in production.
+ * Supabase is an identity/integration boundary and is intentionally not exposed
+ * as a state-authority adapter through RepositoryFactory. Redis is a cache/session
+ * adapter and must never become the source of financial or governance truth.
  */
 
 export type OperationType = "READ" | "WRITE" | "DELETE" | "AUDIT";
@@ -14,7 +17,7 @@ export interface AuditEntry {
   action: string;
   resource: string;
   severity: "S0" | "S1" | "S2" | "S3";
-  actor: string; // hashed principal identifier
+  actor: string;
   result: "success" | "failure" | "denied";
   details: Record<string, unknown>;
 }
@@ -55,8 +58,10 @@ export interface Session {
   tenantId: string;
   userId: string;
   principalType: "user" | "machine" | "service";
+  tokenJti?: string;
   expiresAt: string;
   createdAt: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ReadOptions {
@@ -68,85 +73,28 @@ export interface WriteOptions {
   idempotencyKey?: string;
 }
 
-/**
- * IRepository<T> — Canonical interface for all persistence operations.
- * All adapters (Supabase, Neon, Redis) must implement this contract.
- */
 export interface IRepository<T> {
-  /**
-   * Create a new record
-   */
   create(tenantId: string, data: Partial<T>, options?: WriteOptions): Promise<T>;
-
-  /**
-   * Read by ID with tenant isolation
-   */
   read(tenantId: string, id: string, options?: ReadOptions): Promise<T | null>;
-
-  /**
-   * List with pagination and filters
-   */
   list(
     tenantId: string,
     filters?: Record<string, unknown>,
     limit?: number,
     offset?: number,
   ): Promise<{ items: T[]; total: number }>;
-
-  /**
-   * Update record
-   */
   update(tenantId: string, id: string, data: Partial<T>, options?: WriteOptions): Promise<T>;
-
-  /**
-   * Delete record
-   */
   delete(tenantId: string, id: string): Promise<boolean>;
-
-  /**
-   * Append audit log entry
-   */
   audit(entry: AuditEntry): Promise<void>;
-
-  /**
-   * Health check / connection verification
-   */
   health(): Promise<{ ok: boolean; latencyMs: number }>;
-
-  /**
-   * Find candidate by key prefix for API key auth — tenant-agnostic prefix lookup, hash verification follows
-   * Implementations must not use generic list for auth; use indexed prefix lookup
-   */
   findByPrefix?(prefix: string): Promise<T | null>;
 }
 
 export interface RepositoryFactory {
-  /**
-   * Get adapter by type
-   */
-  getAdapter<T extends { id: string }>(
-    type: "supabase" | "neon" | "redis",
-    schema?: string,
-  ): IRepository<T>;
-
-  /**
-   * Get specialized API key repository
-   */
+  /** Authoritative durable/cache adapters only. Supabase is deliberately excluded. */
+  getAdapter<T extends { id: string }>(type: "neon" | "redis", schema?: string): IRepository<T>;
   getApiKeyRepository(): IRepository<ApiKey>;
-
-  /**
-   * Get specialized audit repository
-   */
   getAuditRepository(): IRepository<AuditEntry>;
-
-  /**
-   * Get specialized tenant repository
-   */
   getTenantRepository(): IRepository<Tenant>;
-
-  /**
-   * Get specialized session repository
-   */
   getSessionRepository(): IRepository<Session>;
 }
 

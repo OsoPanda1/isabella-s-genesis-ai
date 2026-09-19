@@ -3,6 +3,7 @@ import { z } from "zod";
 import { CATALOG_ENTRIES } from "@/lib/api-catalog";
 import { routeRequest } from "@/lib/crown";
 import { SecuritySystem } from "@/lib/security";
+import { PrincipalContext } from "@/lib/principal-context";
 
 const executeSchema = z.object({
   id: z.string(),
@@ -22,7 +23,9 @@ export const Route = createFileRoute("/api/catalog")({
             new Headers({ "content-type": "application/json" }),
           );
           return new Response(
-            JSON.stringify({ error: "Límite de solicitudes de catálogo excedido (60/min)." }),
+            JSON.stringify({
+              error: "Límite de solicitudes de catálogo excedido (60/min).",
+            }),
             { status: 429, headers },
           );
         }
@@ -39,7 +42,9 @@ export const Route = createFileRoute("/api/catalog")({
               new Headers({ "content-type": "application/json" }),
             );
             return new Response(
-              JSON.stringify({ error: "Contenido de búsqueda sospechoso bloqueado." }),
+              JSON.stringify({
+                error: "Contenido de búsqueda sospechoso bloqueado.",
+              }),
               {
                 status: 403,
                 headers,
@@ -71,26 +76,44 @@ export const Route = createFileRoute("/api/catalog")({
           }),
         );
 
+        const publicItems = items.map((item) => ({ ...item }));
+
         return new Response(
           JSON.stringify({
             schema: "isabella.api.catalog.v1",
             total: CATALOG_ENTRIES.length,
-            count: items.length,
-            items,
+            count: publicItems.length,
+            items: publicItems,
           }),
           { headers },
         );
       },
 
       POST: async ({ request }) => {
-        const ip = request.headers.get("x-forwarded-for") || "local_client";
+        const authResult = await PrincipalContext.authorize(request, "isabella:chat");
+        if (!authResult.success) return authResult.response;
+        const { context } = authResult;
+        if (context.role === "Guest") {
+          return new Response(
+            JSON.stringify({ error: "Autenticación requerida para ejecutar contratos." }),
+            {
+              status: 401,
+              headers: SecuritySystem.injectSecureHeaders(
+                new Headers({ "content-type": "application/json" }),
+              ),
+            },
+          );
+        }
+        const ip = context.ip;
         const rateLimit = SecuritySystem.checkRateLimit(ip, 30); // 30 executions/min allowed
         if (!rateLimit.allowed) {
           const headers = SecuritySystem.injectSecureHeaders(
             new Headers({ "content-type": "application/json" }),
           );
           return new Response(
-            JSON.stringify({ error: "Límite de ejecución de contratos excedido (30/min)." }),
+            JSON.stringify({
+              error: "Límite de ejecución de contratos excedido (30/min).",
+            }),
             { status: 429, headers },
           );
         }
@@ -146,7 +169,9 @@ export const Route = createFileRoute("/api/catalog")({
               new Headers({ "content-type": "application/json" }),
             );
             return new Response(
-              JSON.stringify({ error: "Contrato no registrado en el catálogo de Isabella." }),
+              JSON.stringify({
+                error: "Contrato no registrado en el catálogo de Isabella.",
+              }),
               { status: 404, headers },
             );
           }
@@ -158,8 +183,28 @@ export const Route = createFileRoute("/api/catalog")({
               new Headers({ "content-type": "application/json" }),
             );
             return new Response(
-              JSON.stringify({ error: "El método o path no coincide con el contrato registrado." }),
+              JSON.stringify({
+                error: "El método o path no coincide con el contrato registrado.",
+              }),
               { status: 409, headers },
+            );
+          }
+
+          if (entry.status !== "implemented") {
+            return new Response(
+              JSON.stringify({
+                error: "CONTRACT_NOT_IMPLEMENTED",
+                message:
+                  "El contrato está registrado, pero no tiene un handler productivo conectado.",
+                contractId: id,
+                status: entry.status,
+              }),
+              {
+                status: 501,
+                headers: SecuritySystem.injectSecureHeaders(
+                  new Headers({ "content-type": "application/json" }),
+                ),
+              },
             );
           }
 
@@ -189,7 +234,9 @@ export const Route = createFileRoute("/api/catalog")({
               contractId: id,
               method,
               path,
-              governanceScore: decision.policy.risk === "low" ? 1.0 : 0.8,
+              // Señal real y gruesa derivada de la decisión CROWN (allowed=1).
+              // No es un score probabilístico: el detalle está en riskLevel.
+              governanceScore: decision.policy.status === "allowed" ? 1.0 : 0.0,
               decisionStatus: decision.policy.status,
               riskLevel: decision.policy.risk,
               allowedTools: decision.allowedTools,
@@ -207,10 +254,10 @@ export const Route = createFileRoute("/api/catalog")({
           const headers = SecuritySystem.injectSecureHeaders(
             new Headers({ "content-type": "application/json" }),
           );
-          return new Response(
-            JSON.stringify({ error: "Error en simulación nativa de contrato con protección." }),
-            { status: 500, headers },
-          );
+          return new Response(JSON.stringify({ error: "Error en la evaluación del contrato." }), {
+            status: 500,
+            headers,
+          });
         }
       },
     },

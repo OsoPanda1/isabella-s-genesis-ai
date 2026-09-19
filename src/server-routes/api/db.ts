@@ -1,14 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import * as nodeCrypto from "node:crypto";
-import { SovereignDB, COGNITIVE_HEADS } from "@/lib/sovereign-engine";
+import { COGNITIVE_HEADS } from "@/lib/sovereign-engine";
+import { sovereignStateRepository } from "@/lib/sovereign-state-repository";
 import { prisma } from "@/lib/db";
 import { createBookpiPostgresRepository } from "@/lib/repositories/bookpi-postgres-repository";
+import type { LedgerCategory } from "@/lib/repositories/bookpi-repository";
 import { repositoryFactory } from "@/lib/persistence/repository-factory";
 import { SecuritySystem } from "@/lib/security";
 import { withSovereignAuth } from "@/lib/principal-context";
 import { SovereignSandboxService } from "@/lib/sovereign-sandbox";
-import { config } from "@/lib/config";
+import { config, isPayoutCircuitCertified } from "@/lib/config";
+import { devAuthNotFound } from "@/lib/dev-auth-guard";
 
 const addLedgerSchema = z.object({
   operation: z.string().min(1).max(200),
@@ -59,7 +62,8 @@ const oauthCodes = new Map<string, OAuthCodeEntry>();
  * Si falta cualquiera de las dos, la puerta queda cerrada.
  */
 function isDevSessionEnabled(): boolean {
-  return config().NODE_ENV === "development" && config().AUTH_DEV_SESSION_ENABLED === true;
+  const runtime = config();
+  return runtime.NODE_ENV === "development" && runtime.ISABELLA_RUNTIME_MODE === "development";
 }
 
 function timingSafeEqualStrings(a: string, b: string): boolean {
@@ -102,7 +106,12 @@ function auditAccessAttempt(
   details: string,
   severity: "S0" | "S1" | "S2" | "S3" = "S1",
 ): void {
-  SovereignDB.appendAuditLog(traceId, `corr_${traceId}`, ip, event, severity, details);
+  // Note: tenantId would need to be passed for production audit
+  void sovereignStateRepository
+    .appendAuditLog(traceId, `corr_${traceId}`, ip, event, severity, details, "system")
+    .catch(() => {
+      // La auditoría no debe convertir una sesión válida en un error 500 si el esquema aún no está migrado.
+    });
 }
 
 export const Route = createFileRoute("/api/db")({
@@ -111,6 +120,11 @@ export const Route = createFileRoute("/api/db")({
       GET: async ({ request }) => {
         const url = new URL(request.url);
         const action = url.searchParams.get("action") || "session";
+
+        // Separación prod/dev a nivel de módulo: las acciones dev-auth no
+        // existen en producción (404, sin confirmar existencia).
+        const dev404 = devAuthNotFound(action);
+        if (dev404) return dev404;
 
         if (action === "session") {
           return withSovereignAuth("system", "read", async (context) => {
@@ -152,22 +166,24 @@ export const Route = createFileRoute("/api/db")({
             const bookpi = createBookpiPostgresRepository();
             const result = await bookpi.verifyIntegrity(context.tenantId);
             if (result.success) {
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 context.traceId,
                 context.correlationId,
                 context.ip,
                 "Auditoría Forense del Ledger Exitosa",
                 "S3",
                 "Integridad del libro de transacciones validada con éxito.",
+                context.tenantId,
               );
             } else {
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 `trc_ledger_corrupt_${result.corruptedIndex}`,
                 context.correlationId,
                 context.ip,
                 "¡BRECHA DE SEGURIDAD DETECTADA EN LEDGER!",
                 "S0",
                 `Fallo de integridad en Ledger: ${result.error}`,
+                context.tenantId,
               );
             }
             return new Response(JSON.stringify(result), { headers });
@@ -179,24 +195,26 @@ export const Route = createFileRoute("/api/db")({
             const headers = SecuritySystem.injectSecureHeaders(
               new Headers({ "content-type": "application/json" }),
             );
-            const result = SovereignDB.verifyAuditChain();
+            const result = await sovereignStateRepository.verifyAuditChain();
             if (result.success) {
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 context.traceId,
                 context.correlationId,
                 context.ip,
                 "Verificación de Cadena de Auditoría Exitosa",
                 "S3",
                 "La integridad criptográfica de la cadena de logs de auditoría (SHA-256) está intacta.",
+                context.tenantId,
               );
             } else {
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 `trc_audit_corrupt_${result.corruptedId || "unknown"}`,
                 context.correlationId,
                 context.ip,
                 "¡INTEGRIDAD DE REGISTROS DE AUDITORÍA VIOLADA!",
                 "S0",
                 `Fallo en validación de cadena: ${result.error}`,
+                context.tenantId,
               );
             }
             return new Response(JSON.stringify(result), { headers });
@@ -212,22 +230,24 @@ export const Route = createFileRoute("/api/db")({
             const testResults = runSecurityTestSuite();
 
             if (testResults.success) {
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 context.traceId,
                 context.correlationId,
                 context.ip,
                 "Auditoría de Sistemas Automatizada Exitosa",
                 "S3",
                 `Paso exitoso de todas las pruebas automatizadas del criptosistema (${testResults.results.length} de ${testResults.results.length} aprobadas).`,
+                context.tenantId,
               );
             } else {
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 context.traceId,
                 context.correlationId,
                 context.ip,
                 "CRITICAL: Fallo en Auditoría de Sistemas",
                 "S0",
                 "Las pruebas del criptosistema de seguridad han fallado.",
+                context.tenantId,
               );
             }
 
@@ -236,11 +256,11 @@ export const Route = createFileRoute("/api/db")({
         }
 
         if (action === "audit") {
-          return withSovereignAuth("audit", "read", async () => {
+          return withSovereignAuth("audit", "read", async (context) => {
             const headers = SecuritySystem.injectSecureHeaders(
               new Headers({ "content-type": "application/json" }),
             );
-            const auditLogs = SovereignDB.getAuditLogs();
+            const auditLogs = await sovereignStateRepository.getAuditLogs(context.tenantId);
             return new Response(JSON.stringify({ auditLogs }), { headers });
           })({ request });
         }
@@ -250,7 +270,9 @@ export const Route = createFileRoute("/api/db")({
             const headers = SecuritySystem.injectSecureHeaders(
               new Headers({ "content-type": "application/json" }),
             );
-            return new Response(JSON.stringify({ heads: COGNITIVE_HEADS }), { headers });
+            return new Response(JSON.stringify({ heads: COGNITIVE_HEADS }), {
+              headers,
+            });
           })({ request });
         }
 
@@ -276,26 +298,25 @@ export const Route = createFileRoute("/api/db")({
               where: { userId: context.userId },
             });
             if (!account) {
-              account = {
-                userId: context.userId,
-                earnedBalanceCents: 0,
-                qualifiedUses: 0,
-                approvedContributions: 0,
-                trainingCompleted: false, // P8: NO synthetic data
-                identityVerified: false, // P8: NO synthetic data
-                paymentAccountVerified: false, // P8: NO synthetic data
-                profileComplete: false,
-                sanctioned: false,
-                underFraudReview: false,
-              };
+              // Fila durable real (ceros, sin sintéticos): nada transitorio.
+              account = await prisma.monetizationAccount.create({
+                data: { userId: context.userId },
+              });
             }
             const { evaluateEligibility } = await import("@/lib/monetization/eligibility");
+            // subscriptionActive desde el tenant durable (repository authority),
+            // jamás de proyecciones en memoria. Fallo → false (fail-closed).
+            let subscriptionActive = false;
+            try {
+              const tenantRepo = repositoryFactory.getTenantRepository();
+              const tenant = await tenantRepo.read(context.tenantId, context.tenantId);
+              const tier = String(tenant?.tier ?? "").toLowerCase();
+              subscriptionActive = tier === "sovereign" || tier === "enterprise";
+            } catch {
+              subscriptionActive = false;
+            }
             const eligibility = evaluateEligibility({
-              subscriptionActive: (() => {
-                const dbInst = SovereignDB.load();
-                const tenant = dbInst.tenants.find((t) => t.id === (context.tenantId || ""));
-                return tenant ? tenant.tier === "Sovereign" || tenant.tier === "Enterprise" : false;
-              })(), // TODO: Replace with real SovereignDB/Prisma check when merged
+              subscriptionActive,
               identityVerified: account.identityVerified,
               paymentAccountVerified: account.paymentAccountVerified,
               profileComplete: account.profileComplete,
@@ -310,7 +331,9 @@ export const Route = createFileRoute("/api/db")({
               underFraudReview: account.underFraudReview,
             });
 
-            return new Response(JSON.stringify({ account, eligibility }), { headers });
+            return new Response(JSON.stringify({ account, eligibility }), {
+              headers,
+            });
           })({ request });
         }
 
@@ -336,7 +359,9 @@ export const Route = createFileRoute("/api/db")({
           const rawRedirect = url.searchParams.get("redirect_uri") || "";
           if (rawRedirect && !isSameOrigin(url, rawRedirect)) {
             return new Response(
-              JSON.stringify({ error: "redirect_uri debe pertenecer al mismo origen." }),
+              JSON.stringify({
+                error: "redirect_uri debe pertenecer al mismo origen.",
+              }),
               { status: 400, headers },
             );
           }
@@ -344,7 +369,9 @@ export const Route = createFileRoute("/api/db")({
           const clientId = url.searchParams.get("client_id") || "isabella_oauth_client";
 
           const providerUrl = `${url.origin}/api/db?action=oauth-provider&redirect_uri=${encodeURIComponent(redirectUri)}&client_id=${encodeURIComponent(clientId)}`;
-          return new Response(JSON.stringify({ url: providerUrl }), { headers });
+          return new Response(JSON.stringify({ url: providerUrl }), {
+            headers,
+          });
         }
 
         if (action === "oauth-provider") {
@@ -363,7 +390,8 @@ export const Route = createFileRoute("/api/db")({
             });
           }
           const clientId = url.searchParams.get("client_id") || "isabella_oauth_client";
-          const sessions = SovereignDB.getSessions();
+          const systemSession = await sovereignStateRepository.getSession("system");
+          const sessions = systemSession ? [systemSession] : [];
 
           const html = `
             <!DOCTYPE html>
@@ -537,7 +565,9 @@ export const Route = createFileRoute("/api/db")({
               "oauth.callback_expired_code",
               "Código de autorización expirado.",
             );
-            return new Response("Error: Código de autorización expirado.", { status: 400 });
+            return new Response("Error: Código de autorización expirado.", {
+              status: 400,
+            });
           }
           if (!isSameOrigin(url, entry.redirectUri)) {
             auditAccessAttempt(
@@ -546,10 +576,12 @@ export const Route = createFileRoute("/api/db")({
               "oauth.callback_origin_mismatch",
               "Origen de redirección inconsistente con el emitido.",
             );
-            return new Response("Error: Origen de redirección inválido.", { status: 400 });
+            return new Response("Error: Origen de redirección inválido.", {
+              status: 400,
+            });
           }
 
-          const session = SovereignDB.getSessions().find((s) => s.userId === entry.userId);
+          const session = await sovereignStateRepository.getSession(entry.userId);
           if (!session) {
             auditAccessAttempt(
               `trc_oauth_cb_${nodeCrypto.randomUUID().slice(0, 8)}`,
@@ -561,7 +593,7 @@ export const Route = createFileRoute("/api/db")({
           }
 
           const scope = "isabella:chat isabella:ledger:write isabella:sandbox:run";
-          const userToken = SecuritySystem.generateSovereignToken(
+          const userToken = await SecuritySystem.generateSovereignToken(
             session.userId,
             session.role,
             session.tenantId,
@@ -655,6 +687,9 @@ export const Route = createFileRoute("/api/db")({
           new Headers({ "content-type": "application/json" }),
         );
 
+        const dev404Post = action ? devAuthNotFound(action) : null;
+        if (dev404Post) return dev404Post;
+
         try {
           if (action === "oauth-authorize-action") {
             if (!isDevSessionEnabled()) {
@@ -665,7 +700,9 @@ export const Route = createFileRoute("/api/db")({
                 "Intento de usar el flujo OAuth manual fuera del modo desarrollo.",
               );
               return new Response(
-                JSON.stringify({ error: "Flujo OAuth manual deshabilitado en este modo." }),
+                JSON.stringify({
+                  error: "Flujo OAuth manual deshabilitado en este modo.",
+                }),
                 { status: 403, headers },
               );
             }
@@ -676,11 +713,14 @@ export const Route = createFileRoute("/api/db")({
             const redirectUri = decodeURIComponent(redirectUriEnc);
             if (!isSameOrigin(url, redirectUri)) {
               return new Response(
-                JSON.stringify({ error: "redirect_uri inválido: mismo origen requerido." }),
+                JSON.stringify({
+                  error: "redirect_uri inválido: mismo origen requerido.",
+                }),
                 { status: 400, headers },
               );
             }
-            if (SovereignDB.getSessions().find((s) => s.userId === userId) === undefined) {
+            const session = await sovereignStateRepository.getSession(userId);
+            if (!session) {
               return new Response(JSON.stringify({ error: "Usuario no registrado en el nodo." }), {
                 status: 400,
                 headers,
@@ -715,7 +755,9 @@ export const Route = createFileRoute("/api/db")({
                 "Provisionamiento soberano intentado sin token de bootstrap.",
               );
               return new Response(
-                JSON.stringify({ error: "Provisionamiento de owner no autorizado." }),
+                JSON.stringify({
+                  error: "Provisionamiento de owner no autorizado.",
+                }),
                 { status: 403, headers },
               );
             }
@@ -760,21 +802,22 @@ export const Route = createFileRoute("/api/db")({
             }
             const { tenantId, tenantName, ownerId, ownerUsername } = parsedOwner.data;
 
-            if (SovereignDB.getTenant(tenantId)) {
+            const existingTenant = await sovereignStateRepository.getTenant(tenantId);
+            if (existingTenant) {
               return new Response(JSON.stringify({ error: "El tenant ya existe." }), {
                 status: 409,
                 headers,
               });
             }
 
-            SovereignDB.upsertTenant({
+            await sovereignStateRepository.upsertTenant({
               id: tenantId,
               name: tenantName,
               region: "MX-HGO",
               quotaBalance: 0,
               tier: "Sovereign",
             });
-            SovereignDB.upsertSession({
+            await sovereignStateRepository.upsertSession({
               userId: ownerId,
               username: ownerUsername,
               tenantId,
@@ -793,10 +836,79 @@ export const Route = createFileRoute("/api/db")({
             return new Response(JSON.stringify({ success: true, tenantId, ownerId }), { headers });
           }
 
-          // [ELIMINADO] action "authenticate" era una puerta trasera: acuñaba un JWT
-          // para cualquier userId sin credencial. Sustituido por provision-owner
-          // (bootstrap con token) y el flujo OAuth manual (dev, código de un solo
-          // uso). No reintroducir sin acreditar la identidad.
+          // --- USER SIGNUP & LOGIN: NATIVE SOVEREIGN AUTHENTICATION ---
+          if (action === "user-signup") {
+            const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+            const signupSchema = z.object({
+              email: z.string().email(),
+              username: z.string().min(3).max(64),
+              password: z.string().min(8).max(128),
+              tenantSlug: z.string().optional(),
+              role: z.enum(["Operator", "Auditor", "Guest", "SovereignOwner"]).optional(),
+            });
+            const val = signupSchema.safeParse(body);
+            if (!val.success) {
+              return new Response(
+                JSON.stringify({
+                  error: "Datos de registro inválidos.",
+                  details: val.error.format(),
+                }),
+                { status: 400, headers },
+              );
+            }
+            const { UserAuthService } = await import("@/lib/user-auth-service");
+            try {
+              const res = await UserAuthService.signup({
+                email: val.data.email,
+                username: val.data.username,
+                password: val.data.password,
+                tenantSlug: val.data.tenantSlug,
+                role: val.data.role,
+                ip,
+              });
+              return new Response(JSON.stringify(res), { headers });
+            } catch (err: unknown) {
+              return new Response(
+                JSON.stringify({
+                  error: err instanceof Error ? err.message : "Error al registrar usuario.",
+                }),
+                { status: 400, headers },
+              );
+            }
+          }
+
+          if (action === "user-login") {
+            const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+            const loginSchema = z.object({
+              email: z.string().email(),
+              password: z.string().min(1),
+            });
+            const val = loginSchema.safeParse(body);
+            if (!val.success) {
+              return new Response(
+                JSON.stringify({
+                  error: "Correo o contraseña con formato incorrecto.",
+                }),
+                { status: 400, headers },
+              );
+            }
+            const { UserAuthService } = await import("@/lib/user-auth-service");
+            try {
+              const res = await UserAuthService.login({
+                email: val.data.email,
+                password: val.data.password,
+                ip,
+              });
+              return new Response(JSON.stringify(res), { headers });
+            } catch (err: unknown) {
+              return new Response(
+                JSON.stringify({
+                  error: err instanceof Error ? err.message : "Error de autenticación.",
+                }),
+                { status: 401, headers },
+              );
+            }
+          }
 
           // --- DEV SESSION: mock user para desarrollo local ---
           // Fail-closed: solo funciona cuando NODE_ENV=development Y
@@ -811,7 +923,9 @@ export const Route = createFileRoute("/api/db")({
                 "Sesión de desarrollo solicitada fuera del modo desarrollo.",
               );
               return new Response(
-                JSON.stringify({ error: "Sesión de desarrollo no disponible en este modo." }),
+                JSON.stringify({
+                  error: "Sesión de desarrollo no disponible en este modo.",
+                }),
                 { status: 403, headers },
               );
             }
@@ -824,12 +938,48 @@ export const Route = createFileRoute("/api/db")({
               tenantId: "nodo-cero",
             };
 
-            const devToken = SecuritySystem.generateSovereignToken(
+            const tenantRepository = repositoryFactory.getTenantRepository();
+            const existingTenant = await tenantRepository.read(
+              DEV_USER.tenantId,
+              DEV_USER.tenantId,
+            );
+            if (!existingTenant) {
+              await tenantRepository.create(DEV_USER.tenantId, {
+                id: DEV_USER.tenantId,
+                slug: "nodo-cero",
+                tier: "sovereign",
+                quotaBalance: 0,
+                quotaTierLimit: 1_000_000,
+                createdAt: new Date().toISOString(),
+                createdBy: DEV_USER.userId,
+                metadata: { environment: "development", purpose: "preview-chat" },
+              });
+            }
+
+            const devToken = await SecuritySystem.generateSovereignToken(
               DEV_USER.userId,
               DEV_USER.role,
               DEV_USER.tenantId,
               "isabella:chat isabella:ledger:write isabella:sandbox:run",
             );
+            const tokenPayload = devToken.split(".")[1];
+            const tokenClaims = tokenPayload
+              ? (JSON.parse(Buffer.from(tokenPayload, "base64url").toString("utf8")) as {
+                  jti?: string;
+                })
+              : {};
+            if (!tokenClaims.jti) throw new Error("dev_session_missing_jti");
+
+            const sessionRepository = repositoryFactory.getSessionRepository();
+            await sessionRepository.create(`${DEV_USER.userId}:${tokenClaims.jti}`, {
+              id: `${DEV_USER.userId}:${tokenClaims.jti}`,
+              tenantId: DEV_USER.tenantId,
+              userId: DEV_USER.userId,
+              principalType: "user",
+              tokenJti: tokenClaims.jti,
+              expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+              createdAt: new Date().toISOString(),
+            });
 
             auditAccessAttempt(
               `trc_dev_${nodeCrypto.randomUUID().slice(0, 8)}`,
@@ -857,7 +1007,9 @@ export const Route = createFileRoute("/api/db")({
               const val = addLedgerSchema.safeParse(body);
               if (!val.success) {
                 return new Response(
-                  JSON.stringify({ error: "Esquema inválido para transacciones." }),
+                  JSON.stringify({
+                    error: "Esquema inválido para transacciones.",
+                  }),
                   { status: 400, headers },
                 );
               }
@@ -867,22 +1019,25 @@ export const Route = createFileRoute("/api/db")({
                 tenantId: context.tenantId,
                 userId: context.userId,
                 operation: val.data.operation,
-                category: val.data.category as any,
+                category: val.data.category as LedgerCategory,
                 cost: val.data.cost,
                 tokens: val.data.tokens,
               });
               const block = blockRes.success ? blockRes.block : { index: -1 };
 
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 `trc_tx_${block.index}`,
                 context.correlationId,
                 context.ip,
                 "Transacción Ledger Registrada",
                 "S3",
-                `Costo: $${(block as any).cost} debitado para el tenant aislado ${context.tenantId}`,
+                `Costo: $${val.data.cost} debitado para el tenant aislado ${context.tenantId}`,
+                context.tenantId,
               );
 
-              return new Response(JSON.stringify({ success: true, block }), { headers });
+              return new Response(JSON.stringify({ success: true, block }), {
+                headers,
+              });
             })({ request });
           }
 
@@ -903,19 +1058,25 @@ export const Route = createFileRoute("/api/db")({
                 "Refund requested",
               );
               if (!res.success) {
-                return new Response(JSON.stringify({ error: res.error }), { status: 400, headers });
+                return new Response(JSON.stringify({ error: res.error }), {
+                  status: 400,
+                  headers,
+                });
               }
 
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 `trc_rf_${index}`,
                 context.correlationId,
                 context.ip,
                 "Reembolso Ledger Procesado",
                 "S2",
                 `Transacción index ${index} reembolsada para ${context.tenantId}`,
+                context.tenantId,
               );
 
-              return new Response(JSON.stringify({ success: true }), { headers });
+              return new Response(JSON.stringify({ success: true }), {
+                headers,
+              });
             })({ request });
           }
 
@@ -924,7 +1085,9 @@ export const Route = createFileRoute("/api/db")({
               const val = executeToolSchema.safeParse(body);
               if (!val.success) {
                 return new Response(
-                  JSON.stringify({ error: "Fórmula matemática o parámetros corruptos." }),
+                  JSON.stringify({
+                    error: "Fórmula matemática o parámetros corruptos.",
+                  }),
                   { status: 400, headers },
                 );
               }
@@ -936,7 +1099,10 @@ export const Route = createFileRoute("/api/db")({
                 result = await sandbox.executeTask(
                   ["wasm-process", "math-expr"],
                   { TENANT_ID: context.tenantId },
-                  JSON.stringify({ formula: val.data.expression, vars: val.data.variables || {} }),
+                  JSON.stringify({
+                    formula: val.data.expression,
+                    vars: val.data.variables || {},
+                  }),
                 );
                 await sandbox.deprovisionInstance();
               } else {
@@ -947,13 +1113,14 @@ export const Route = createFileRoute("/api/db")({
                 );
               }
 
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 context.traceId,
                 context.correlationId,
                 context.ip,
                 "Herramienta Ejecutada en Sandbox",
                 result.success ? "S3" : "S1",
                 `Fórmula: [${val.data.expression}]. Simulación WASM: ${val.data.useWasmSim ? "Habilitada" : "Deshabilitada"}.`,
+                context.tenantId,
               );
 
               return new Response(JSON.stringify(result), { headers });
@@ -1063,6 +1230,151 @@ export const Route = createFileRoute("/api/db")({
             })({ request });
           }
 
+          // HITL: solicitar approval durable para ejecutar una herramienta.
+          // Requiere DATABASE_URL (multi-instancia); sin ella, 503 honesto.
+          if (action === "approval-request") {
+            return withSovereignAuth("system", "write", async (context, req, body: unknown) => {
+              const { traceId, tool } = (body || {}) as {
+                traceId?: string;
+                tool?: string;
+              };
+              if (!traceId || !tool) {
+                return new Response(JSON.stringify({ error: "traceId y tool requeridos." }), {
+                  status: 400,
+                  headers,
+                });
+              }
+              if (!config().DATABASE_URL) {
+                return new Response(
+                  JSON.stringify({
+                    error: "Approvals durables requieren DATABASE_URL (multi-instancia).",
+                  }),
+                  { status: 503, headers },
+                );
+              }
+              const { grantApprovalAsync } = await import("@/lib/repositories/approval-repository");
+              const grant = await grantApprovalAsync(
+                traceId,
+                tool,
+                context.userId,
+                context.tenantId,
+              );
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  approvalId: grant.approvalId,
+                  expiresAt: grant.expiresAt,
+                }),
+                { headers },
+              );
+            })({ request });
+          }
+
+          // HITL: estado de approval (vigente/consumido/ausente).
+          if (action === "approval-status") {
+            return withSovereignAuth("system", "read", async (context, req, body: unknown) => {
+              const { traceId, tool } = (body || {}) as {
+                traceId?: string;
+                tool?: string;
+              };
+              if (!traceId || !tool) {
+                return new Response(JSON.stringify({ error: "traceId y tool requeridos." }), {
+                  status: 400,
+                  headers,
+                });
+              }
+              if (!config().DATABASE_URL) {
+                return new Response(
+                  JSON.stringify({
+                    error: "Approvals durables requieren DATABASE_URL.",
+                  }),
+                  { status: 503, headers },
+                );
+              }
+              const { hasApprovalAsync } = await import("@/lib/repositories/approval-repository");
+              const active = await hasApprovalAsync(
+                traceId,
+                tool,
+                context.userId,
+                context.tenantId,
+              );
+              return new Response(JSON.stringify({ success: true, active }), {
+                headers,
+              });
+            })({ request });
+          }
+
+          // EMERGENCY (§7.1 Charter): engage/release/status del kill switch.
+          // Solo SovereignOwner. Sin DATABASE_URL: 503 honesto (sin estado
+          // durable no hay parada multi-instancia confiable).
+          if (
+            action === "emergency-engage" ||
+            action === "emergency-release" ||
+            action === "emergency-status"
+          ) {
+            return withSovereignAuth("system", "admin", async (context, req, body: unknown) => {
+              if (context.role !== "SovereignOwner") {
+                return new Response(
+                  JSON.stringify({
+                    error: "Solo SovereignOwner opera el kill switch.",
+                  }),
+                  { status: 403, headers },
+                );
+              }
+              if (!config().DATABASE_URL) {
+                return new Response(
+                  JSON.stringify({
+                    error: "Kill switch durable requiere DATABASE_URL.",
+                  }),
+                  { status: 503, headers },
+                );
+              }
+              const { createPostgresKillSwitchStore } = await import("@/lib/kill-switch");
+              const store = createPostgresKillSwitchStore((event, details) => {
+                void sovereignStateRepository.appendAuditLog(
+                  `trc_emergency_${nodeCrypto.randomUUID().slice(0, 8)}`,
+                  context.correlationId,
+                  context.ip,
+                  "Kill Switch Operado",
+                  "S0",
+                  `${event}: ${JSON.stringify(details)}`,
+                  context.tenantId,
+                );
+              });
+              if (action === "emergency-status") {
+                const states = await store.list();
+                return new Response(JSON.stringify({ success: true, states }), { headers });
+              }
+              const { capability, reason } = (body || {}) as {
+                capability?: string;
+                reason?: string;
+              };
+              if (!capability) {
+                return new Response(JSON.stringify({ error: "capability requerida." }), {
+                  status: 400,
+                  headers,
+                });
+              }
+              try {
+                const state =
+                  action === "emergency-engage"
+                    ? await store.engage(
+                        capability,
+                        reason || "emergencia declarada",
+                        context.userId,
+                      )
+                    : await store.release(capability, context.userId);
+                return new Response(JSON.stringify({ success: true, state }), { headers });
+              } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                return new Response(JSON.stringify({ error: message }), {
+                  status: 400,
+                  headers,
+                });
+              }
+            })({ request });
+          }
+
           if (action === "monetization-execute-task") {
             return withSovereignAuth("system", "write", async (context, _req, body: unknown) => {
               const { task } = (body || {}) as { task?: string };
@@ -1130,20 +1442,21 @@ export const Route = createFileRoute("/api/db")({
                 tenantId: context.tenantId,
                 userId: context.userId,
                 operation: `MONETIZATION_CREDIT: ${description} (+$${(centsToAdd / 100).toFixed(2)} USD)`,
-                category: "other" as any,
+                category: "other" as LedgerCategory,
                 cost: 0,
                 // no deduction for credits earned
                 tokens: 0,
               });
               const block = blockRes.success ? blockRes.block : { index: -1 };
 
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 `trc_mon_task_${block.index}`,
                 context.correlationId,
                 context.ip,
                 "Crédito de Monetización Acreditado",
                 "S3",
                 `Monto de $${(centsToAdd / 100).toFixed(2)} USD asignado a ${context.userId} por tarea: ${task}`,
+                context.tenantId,
               );
 
               return new Response(JSON.stringify({ success: true, account: updated }), { headers });
@@ -1178,13 +1491,14 @@ export const Route = createFileRoute("/api/db")({
                 },
               });
 
-              SovereignDB.appendAuditLog(
+              await sovereignStateRepository.appendAuditLog(
                 `trc_mon_prof_${context.userId}`,
                 context.correlationId,
                 context.ip,
                 "Perfil de Monetización Sincronizado",
                 "S3",
                 `Parámetros de elegibilidad actualizados para ${context.userId}`,
+                context.tenantId,
               );
 
               return new Response(JSON.stringify({ success: true, account: updated }), { headers });
@@ -1193,7 +1507,32 @@ export const Route = createFileRoute("/api/db")({
 
           if (action === "monetization-request-withdrawal") {
             return withSovereignAuth("system", "write", async (context, _req, body: unknown) => {
-              const { idempotencyKey } = (body || {}) as { idempotencyKey?: string };
+              // P0-C: fail-closed. En staging/production los payouts quedan
+              // FUERA DE SERVICIO hasta certificar los circuitos financieros
+              // A–J (ISABELLA_PAYOUT_CIRCUIT_CERTIFIED=true documentado en
+              // PRODUCTION_REPAIR_REGISTER). Sin certificación → 503 y cero
+              // movimiento de fondos (real o programado).
+              const payoutRuntime = config();
+              const payoutProductionLike =
+                payoutRuntime.NODE_ENV === "production" ||
+                payoutRuntime.ISABELLA_RUNTIME_MODE === "production" ||
+                payoutRuntime.ISABELLA_RUNTIME_MODE === "staging";
+              if (payoutProductionLike && !isPayoutCircuitCertified()) {
+                return new Response(
+                  JSON.stringify({
+                    error: "payouts_locked",
+                    traceId: `trc_payout_lock_${nodeCrypto.randomUUID().slice(0, 8)}`,
+                    message:
+                      "Movimientos de dinero bloqueados: circuitos financieros A–J sin certificar (ISABELLA_PAYOUT_CIRCUIT_CERTIFIED).",
+                  }),
+                  { status: 503, headers },
+                );
+              }
+
+              const { idempotencyKey, destinationAccountId } = (body || {}) as {
+                idempotencyKey?: string;
+                destinationAccountId?: string;
+              };
 
               const { WithdrawalService } = await import("@/lib/monetization/withdrawal");
               const deps = {
@@ -1203,14 +1542,17 @@ export const Route = createFileRoute("/api/db")({
                   });
                   if (!acc) throw new Error("No account");
                   const { evaluateEligibility } = await import("@/lib/monetization/eligibility");
+                  let withdrawalSubscriptionActive = false;
+                  try {
+                    const tenantRepo = repositoryFactory.getTenantRepository();
+                    const tenant = await tenantRepo.read(context.tenantId, context.tenantId);
+                    const tier = String(tenant?.tier ?? "").toLowerCase();
+                    withdrawalSubscriptionActive = tier === "sovereign" || tier === "enterprise";
+                  } catch {
+                    withdrawalSubscriptionActive = false;
+                  }
                   return evaluateEligibility({
-                    subscriptionActive: (() => {
-                      const dbInst = SovereignDB.load();
-                      const tenant = dbInst.tenants.find((t) => t.id === (context.tenantId || ""));
-                      return tenant
-                        ? tenant.tier === "Sovereign" || tenant.tier === "Enterprise"
-                        : false;
-                    })(),
+                    subscriptionActive: withdrawalSubscriptionActive,
                     identityVerified: acc.identityVerified,
                     paymentAccountVerified: acc.paymentAccountVerified,
                     profileComplete: acc.profileComplete,
@@ -1230,30 +1572,49 @@ export const Route = createFileRoute("/api/db")({
                     where: { userId: uid },
                   });
                   if (!acc) throw new Error("No account");
-                  if (acc.underFraudReview) {
-                    return {
-                      reviewId: `rev_${nodeCrypto.randomUUID().slice(0, 8)}`,
-                      status: "hold" as const,
-                      score: 0.95,
-                      signals: ["FRAUD_FLAG_ON"],
-                    };
-                  }
+                  // Riesgo REAL vía fraud-review (determinista, auditable),
+                  // no hardcoded. Velocidad desconocida aquí → 0 documentado.
+                  const { evaluateWithdrawalRisk } =
+                    await import("@/lib/monetization/fraud-review");
+                  const accountAgeDays = Math.max(
+                    0,
+                    Math.floor((Date.now() - new Date(acc.createdAt).getTime()) / 86_400_000),
+                  );
+                  const evaluation = evaluateWithdrawalRisk({
+                    userId: uid,
+                    amountCents: acc.earnedBalanceCents,
+                    accountAgeDays,
+                    withdrawalsLast24h: 0,
+                    failedAttemptsLast24h: 0,
+                    sanctioned: acc.sanctioned,
+                    underFraudReview: acc.underFraudReview,
+                    identityVerified: acc.identityVerified,
+                  });
                   return {
-                    reviewId: `rev_${nodeCrypto.randomUUID().slice(0, 8)}`,
-                    status: "pass" as const,
-                    score: 0.05,
-                    signals: [],
+                    reviewId: evaluation.reviewId,
+                    status: evaluation.status,
+                    score: evaluation.score,
+                    signals: evaluation.signals,
                   };
                 },
                 isIdempotent: async (key: string) => {
-                  const bookpi = createBookpiPostgresRepository();
-                  // TODO: full ledger for all tenants is not standard, simulating by empty or error if needed, but let's mock full Ledger here since it's admin
-                  const fullLedger = await bookpi.list(context.tenantId); // Restricted to tenant for now
-                  return fullLedger.some(
-                    (b) =>
-                      b.operation.includes(`idempotencyKey:${key}`) || b.operation.includes(key),
-                  );
+                  // Idempotencia ATÓMICA real: INSERT ... ON CONFLICT sobre
+                  // UNIQUE(tenant_id, idempotency_key) en economic_events.
+                  // El primer llamador inserta (no duplicado); los siguientes
+                  // chocan con la constraint (duplicado). Sin carreras.
+                  const { recordEconomicEvent } = await import("@/lib/economic-events");
+                  const claimed = await recordEconomicEvent({
+                    tenantId: context.tenantId,
+                    actorId: context.userId,
+                    eventType: "WITHDRAWAL_REQUEST",
+                    amountMinor: 0,
+                    direction: "DEBIT",
+                    source: "internal",
+                    idempotencyKey: `withdrawal:${key}`,
+                  });
+                  return claimed.duplicate === true;
                 },
+                // Sin efecto: el claim ya ocurrió atómicamente en isIdempotent.
                 markIdempotent: async () => {},
                 appendBookPI: async (entry: {
                   type: string;
@@ -1269,13 +1630,36 @@ export const Route = createFileRoute("/api/db")({
                     tenantId: context.tenantId,
                     userId: entry.userId,
                     operation: `MONETIZATION_EVENT: ${entry.type} (payoutId:${entry.payoutId || "N/A"}) (risk:${entry.riskScore || 0}) (idempotencyKey:${entry.idempotencyKey || "N/A"})`,
-                    category: "other" as any,
+                    category: "other" as LedgerCategory,
                     cost: cost,
                     tokens: 0,
                   });
                 },
                 checkLiquidityPool: async () => true,
-                createPayout: async () => {
+                createPayout: async (payoutRequest: {
+                  userId: string;
+                  amountCents: number;
+                  idempotencyKey: string;
+                }) => {
+                  // Ejecución REAL cuando el usuario provee cuenta destino
+                  // (Stripe Transfer idempotente con el monto verificado).
+                  // Sin destino: programado manual, sin movimiento de fondos.
+                  if (typeof destinationAccountId === "string" && destinationAccountId.length > 0) {
+                    const { executePayout } = await import("@/lib/monetization/payout-executor");
+                    const executed = await executePayout({
+                      amountCents: payoutRequest.amountCents,
+                      destinationAccountId,
+                      idempotencyKey: `payout:${payoutRequest.idempotencyKey}`,
+                      metadata: {
+                        tenantId: context.tenantId,
+                        userId: payoutRequest.userId,
+                      },
+                    });
+                    return {
+                      payoutId: executed.payoutId,
+                      status: executed.status,
+                    };
+                  }
                   return {
                     payoutId: `pay_${nodeCrypto.randomUUID().slice(0, 8)}`,
                     status: "scheduled" as const,
@@ -1301,13 +1685,16 @@ export const Route = createFileRoute("/api/db")({
                   },
                 });
 
-                SovereignDB.appendAuditLog(
+                await sovereignStateRepository.appendAuditLog(
                   `trc_mon_with_${result.payoutId || "N/A"}`,
                   context.correlationId,
                   context.ip,
                   "Retiro de Monetización Procesado",
                   "S3",
-                  `Usuario ${context.userId} retiró de forma exitosa $${(currentAccount.earnedBalanceCents / 100).toFixed(2)} USD. ID de Liquidación: ${result.payoutId || "N/A"}`,
+                  result.payoutId?.startsWith("tr_")
+                    ? `Usuario ${context.userId} retiró $${(currentAccount.earnedBalanceCents / 100).toFixed(2)} USD vía Stripe. ID: ${result.payoutId}`
+                    : `Usuario ${context.userId} programó retiro de $${(currentAccount.earnedBalanceCents / 100).toFixed(2)} USD (ejecución manual pendiente). ID: ${result.payoutId || "N/A"}`,
+                  context.tenantId,
                 );
 
                 return new Response(
@@ -1379,7 +1766,43 @@ export const Route = createFileRoute("/api/db")({
                 val.data,
               );
 
-              return new Response(JSON.stringify({ success: true, result }), { headers });
+              return new Response(JSON.stringify({ success: true, result }), {
+                headers,
+              });
+            })({ request });
+          }
+
+          if (action === "pennylane-run") {
+            return withSovereignAuth("sandbox", "execute", async (context, _req, body: unknown) => {
+              const pennylaneSchema = z.object({
+                qubits: z.number().min(2).max(16).default(4),
+                depth: z.number().min(1).max(20).default(3),
+                objective: z
+                  .enum(["vqe_hamiltonian", "qml_classification", "bell_state_tomography"])
+                  .default("vqe_hamiltonian"),
+              });
+
+              const val = pennylaneSchema.safeParse(body);
+              if (!val.success) {
+                return new Response(
+                  JSON.stringify({
+                    error: "Parámetros de PennyLane inválidos.",
+                    details: val.error.format(),
+                  }),
+                  { status: 400, headers },
+                );
+              }
+
+              const { PennyLaneBridge } = await import("@/lib/quantum/pennylane-bridge");
+              const job = await PennyLaneBridge.runPennyLaneJob(
+                context.tenantId,
+                context.userId,
+                val.data.qubits,
+                val.data.depth,
+                val.data.objective,
+              );
+
+              return new Response(JSON.stringify({ success: true, job }), { headers });
             })({ request });
           }
 

@@ -40,7 +40,7 @@ export interface WithdrawalDependencies {
     userId: string;
     amountCents: number;
     idempotencyKey: string;
-  }): Promise<{ payoutId: string; status: "scheduled" }>;
+  }): Promise<{ payoutId: string; status: "scheduled" | "paid" }>;
 }
 
 export class WithdrawalService {
@@ -51,7 +51,7 @@ export class WithdrawalService {
     territoryId: string,
     opts?: { idempotencyKey?: string },
   ): Promise<
-    | { ok: true; payoutId: string; status: "scheduled" }
+    | { ok: true; payoutId: string; status: "scheduled" | "paid" }
     | {
         ok: false;
         code: string;
@@ -89,7 +89,10 @@ export class WithdrawalService {
     }
 
     // Zero-Loss Check: Does the territorial pool have actual cash liquidity?
-    const hasLiquidity = await this.deps.checkLiquidityPool(territoryId, eligibility.availableBalanceCents);
+    const hasLiquidity = await this.deps.checkLiquidityPool(
+      territoryId,
+      eligibility.availableBalanceCents,
+    );
     if (!hasLiquidity) {
       return {
         ok: false,

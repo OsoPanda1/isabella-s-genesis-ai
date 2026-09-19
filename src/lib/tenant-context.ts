@@ -44,10 +44,16 @@ export function assertTenantBoundary(
   requestedTenantId: string | undefined,
 ): { allowed: boolean; reason: string } {
   if (!authenticated.authenticated || !requestedTenantId) {
-    return { allowed: true, reason: "Sin tenant explícito: no hay frontera que validar." };
+    return {
+      allowed: true,
+      reason: "Sin tenant explícito: no hay frontera que validar.",
+    };
   }
   if (authenticated.tenantId === requestedTenantId) {
-    return { allowed: true, reason: "Tenant coincide con identidad autenticada." };
+    return {
+      allowed: true,
+      reason: "Tenant coincide con identidad autenticada.",
+    };
   }
   return {
     allowed: false,

@@ -1,14 +1,14 @@
-import { EthicalKnowledgeSnippet, GovernanceGuideline, TransparencyMarker } from './index';
+import { EthicalKnowledgeSnippet, GovernanceGuideline, TransparencyMarker } from "./index";
 
 // Simple browser-safe hash for the chaotic engine simulation
 function generateHash(str: string): string {
   let hash = 0;
   for (let i = 0, len = str.length; i < len; i++) {
-      const chr = str.charCodeAt(i);
-      hash = (hash << 5) - hash + chr;
-      hash |= 0; 
+    const chr = str.charCodeAt(i);
+    hash = (hash << 5) - hash + chr;
+    hash |= 0;
   }
-  return Math.abs(hash).toString(16).padStart(8, '0');
+  return Math.abs(hash).toString(16).padStart(8, "0");
 }
 
 export class EthicalRegistry {
@@ -19,14 +19,18 @@ export class EthicalRegistry {
   /**
    * Stores an ethical knowledge snippet after it passes validation.
    */
-  public storeSnippet(content: string, integrityHash: string, entropyLevel: number = 1.0): EthicalKnowledgeSnippet {
+  public storeSnippet(
+    content: string,
+    integrityHash: string,
+    entropyLevel: number = 1.0,
+  ): EthicalKnowledgeSnippet {
     const id = crypto.randomUUID();
     const snippet: EthicalKnowledgeSnippet = {
-      id, 
-      content, 
-      entropyLevel, 
-      timestamp: Date.now(), 
-      integrityHash
+      id,
+      content,
+      entropyLevel,
+      timestamp: Date.now(),
+      integrityHash,
     };
     this.snippets.set(id, snippet);
     return snippet;
@@ -39,18 +43,22 @@ export class EthicalRegistry {
   /**
    * Indexes a newly resolved governance guideline immutably.
    */
-  public indexGuideline(premise: string, resolution: string, snippetIds: string[]): GovernanceGuideline {
+  public indexGuideline(
+    premise: string,
+    resolution: string,
+    snippetIds: string[],
+  ): GovernanceGuideline {
     const id = crypto.randomUUID();
-    const payload = `${premise}:${resolution}:${snippetIds.sort().join(',')}`;
+    const payload = `${premise}:${resolution}:${snippetIds.sort().join(",")}`;
     const hash = generateHash(payload);
-    
+
     const guideline: GovernanceGuideline = {
-      id, 
-      premise, 
-      resolution, 
-      snippetIds, 
-      hash, 
-      timestamp: Date.now()
+      id,
+      premise,
+      resolution,
+      snippetIds,
+      hash,
+      timestamp: Date.now(),
     };
     this.guidelines.set(id, guideline);
     return guideline;
@@ -63,14 +71,18 @@ export class EthicalRegistry {
   /**
    * Adds a transparency marker to any snippet or guideline for audit trails.
    */
-  public addTransparencyMarker(targetId: string, auditScore: number, flags: string[]): TransparencyMarker {
+  public addTransparencyMarker(
+    targetId: string,
+    auditScore: number,
+    flags: string[],
+  ): TransparencyMarker {
     const id = crypto.randomUUID();
-    const marker: TransparencyMarker = { 
-      id, 
-      targetId, 
-      auditScore, 
-      flags, 
-      timestamp: Date.now() 
+    const marker: TransparencyMarker = {
+      id,
+      targetId,
+      auditScore,
+      flags,
+      timestamp: Date.now(),
     };
     this.markers.set(id, marker);
     return marker;
@@ -81,13 +93,17 @@ export class EthicalRegistry {
    */
   public getSystemHealth() {
     const totalSnippets = this.snippets.size;
-    const anchoredSnippets = new Set(Array.from(this.guidelines.values()).flatMap(g => g.snippetIds)).size;
-    
+    const anchoredSnippets = new Set(
+      Array.from(this.guidelines.values()).flatMap((g) => g.snippetIds),
+    ).size;
+
     const density = totalSnippets > 0 ? (anchoredSnippets / totalSnippets) * 100 : 0;
-    
-    const avgAuditScore = this.markers.size > 0 
-      ? Array.from(this.markers.values()).reduce((acc, m) => acc + m.auditScore, 0) / this.markers.size 
-      : 1;
+
+    const avgAuditScore =
+      this.markers.size > 0
+        ? Array.from(this.markers.values()).reduce((acc, m) => acc + m.auditScore, 0) /
+          this.markers.size
+        : 1;
 
     return {
       totalSnippets,
@@ -95,8 +111,8 @@ export class EthicalRegistry {
       guidelinesCount: this.guidelines.size,
       knowledgeDensity: density, // Percentage
       alignmentCheckScore: avgAuditScore * 100, // Percentage
-      activeFlags: Array.from(this.markers.values()).flatMap(m => m.flags).length,
-      healthStatus: avgAuditScore > 0.8 ? "Optimal" : avgAuditScore > 0.5 ? "Warning" : "Critical"
+      activeFlags: Array.from(this.markers.values()).flatMap((m) => m.flags).length,
+      healthStatus: avgAuditScore > 0.8 ? "Optimal" : avgAuditScore > 0.5 ? "Warning" : "Critical",
     };
   }
 }

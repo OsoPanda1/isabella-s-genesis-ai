@@ -1,13 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Route as ServerRoute } from "../../server-routes/api/catalog";
 
-const loadHandler = async (method: string, context: unknown): Promise<Response> => {
-  const module = (await import(/* @vite-ignore */ "../../server-routes/api/catalog")) as { Route: { options: { server: { handlers: Record<string, (ctx: unknown) => Promise<Response>> } } } };
-  return module.Route.options.server.handlers[method](context);
+// Autoridad única de routing: la lógica canónica vive en
+// src/server-routes/api/catalog.ts. Este archivo solo delega
+// (ver ADR-001-source-of-truth). Import estático para que el
+// bundler (Nitro/Rolldown) resuelva el módulo en build.
+type Handlers = {
+  GET: (ctx: unknown) => Promise<Response>;
+  POST: (ctx: unknown) => Promise<Response>;
 };
+const server = ServerRoute.options.server;
+if (!server) throw new Error("Ruta servidora sin handlers.");
+const handlers = server.handlers as unknown as Handlers;
 
 export const Route = createFileRoute("/api/catalog")({
-  server: { handlers: {
-    GET: (context) => loadHandler("GET", context),
-    POST: (context) => loadHandler("POST", context),
-  } },
+  server: {
+    handlers: {
+      GET: (context) => handlers.GET(context),
+      POST: (context) => handlers.POST(context),
+    },
+  },
 });

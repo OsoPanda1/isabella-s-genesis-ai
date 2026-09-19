@@ -1,4 +1,3 @@
-/* eslint-disable security/detect-object-injection, security/detect-non-literal-regexp */
 /**
  * ISABELLA NATIVE ML — Clasificador determinista es-MX (NO generativo)
  * -----------------------------------------------------------------
@@ -27,6 +26,12 @@ export type NativeIntent =
   | "cultural"
   | "soporte"
   | "comunidad"
+  | "investigacion_mercado"
+  | "monitoreo_web"
+  | "diseno_marca"
+  | "busqueda_profunda"
+  | "calidad_software"
+  | "ingenieria_despliegue"
   | "general";
 
 export type MexicanSentiment = "positivo" | "neutral" | "negativo";
@@ -331,6 +336,102 @@ const INTENT_DICTIONARY: Record<NativeIntent, { keywords: string[]; weight: numb
     ],
     weight: 1.2,
   },
+  investigacion_mercado: {
+    keywords: [
+      "mercado",
+      "tam",
+      "sam",
+      "som",
+      "prospeccion",
+      "competencia",
+      "competitiva",
+      "lead",
+      "dossier",
+      "firecrawl-market-research",
+      "firecrawl-lead-gen",
+      "firecrawl-competitive-intel",
+      "firecrawl-lead-research",
+    ],
+    weight: 1.4,
+  },
+  monitoreo_web: {
+    keywords: [
+      "monitoreo",
+      "diff",
+      "seo",
+      "crawl",
+      "scraping",
+      "workflows",
+      "dashboard reporting",
+      "firecrawl-monitor",
+      "firecrawl-seo-audit",
+      "firecrawl-workflows",
+      "firecrawl-dashboard-reporting",
+    ],
+    weight: 1.4,
+  },
+  diseno_marca: {
+    keywords: [
+      "marca",
+      "banner",
+      "slides",
+      "infografia",
+      "infographic",
+      "paleta",
+      "ckm",
+      "ckm:brand",
+      "ckm:banner-design",
+      "ckm:slides",
+      "baoyu-infographic",
+      "baoyu-markdown-to-html",
+    ],
+    weight: 1.5,
+  },
+  busqueda_profunda: {
+    keywords: [
+      "tavily",
+      "tavily-search",
+      "rag",
+      "knowledge base",
+      "firecrawl-knowledge-base",
+      "busqueda factica",
+      "evidencia web",
+      "citar fuentes",
+    ],
+    weight: 1.5,
+  },
+  calidad_software: {
+    keywords: [
+      "flutter test",
+      "widget test",
+      "devtools",
+      "web vitals",
+      "lcp",
+      "cls",
+      "swiftui",
+      "integration test",
+      "flutter-add-widget-test",
+      "browser-testing-with-devtools",
+      "swiftui-expert-skill",
+      "flutter-add-integration-test",
+    ],
+    weight: 1.4,
+  },
+  ingenieria_despliegue: {
+    keywords: [
+      "ci cd",
+      "github actions",
+      "pipeline",
+      "source driven",
+      "launch",
+      "shipping",
+      "despliegue",
+      "ci-cd-and-automation",
+      "source-driven-development",
+      "shipping-and-launch",
+    ],
+    weight: 1.4,
+  },
   general: {
     keywords: [],
     weight: 0.5,
@@ -381,7 +482,10 @@ export function analyzeMexicanSentiment(text: string): {
 /**
  * Clasificador Vectorial Heurístico TF-IDF para categorización de intenciones
  */
-function classifyIntentHeuristic(text: string): { intent: NativeIntent; confidence: number } {
+function classifyIntentHeuristic(text: string): {
+  intent: NativeIntent;
+  confidence: number;
+} {
   const n = normalize(text);
 
   // Intent classification
@@ -479,6 +583,30 @@ const RESPONSES: Record<NativeIntent, Array<(ctx: NativeMLRequest) => string>> =
     () =>
       `El Ecosistema TAMV Online Network y RDM Digital se basan en la cooperación mutua y la soberanía comunitaria. Aquí en el estado de Hidalgo construimos tecnología descentralizada para conectar a productores, educadores y creadores locales sin intermediarios explotadores. ¡La unión hace la fuerza!`,
   ],
+  investigacion_mercado: [
+    (ctx) =>
+      `¡Entendido! Activo los skills de Inteligencia y Prospección de Mercado (Firecrawl 733/750/752/754). Puedo dimensionar TAM/SAM/SOM, mapear matrices de paridad competitiva o generar dossiers corporativos con trazabilidad SHA-256. Consulta: "${ctx.text.slice(0, 60)}...". ¿Deseas ejecutar el crawl ahora?`,
+  ],
+  monitoreo_web: [
+    (ctx) =>
+      `Monitoreo web en marcha (Firecrawl 734/741/745/747). Estoy lista para diffing de DOM en tiempo real, auditoría SEO técnica con marcado JSON-LD o pipelines ETL de extracción periódica. Parámetro: "${ctx.text.slice(0, 60)}...". ¿Levantamos el snapshot?`,
+  ],
+  diseno_marca: [
+    (ctx) =>
+      `Activando motores de Diseño y Presentación Soberana (CKM & Baoyu 735/736/738/742/746). Aplico contraste matemático WCAG AAA, geometría de banners multiformato (16:9, 1:1, 9:16) e infografías SVG estructuradas. Tu requerimiento: "${ctx.text.slice(0, 60)}...". ¿Comenzamos con la paleta o el layout?`,
+  ],
+  busqueda_profunda: [
+    (ctx) =>
+      `Búsqueda fáctica y base de conocimiento activada (Tavily 737 / Firecrawl KB 743). Extraigo hechos respaldados con URLs de procedencia y particionamiento limpio para RAG, bloqueando granjas SEO. Búsqueda: "${ctx.text.slice(0, 60)}...". Procediendo a indexar.`,
+  ],
+  calidad_software: [
+    (ctx) =>
+      `Harness de Calidad e Ingeniería de Software en línea (Flutter 739/753, Chrome DevTools 740, SwiftUI 748). Diagnostico Core Web Vitals (LCP/CLS), compongo pruebas Dart de widgets/integración y genero vistas SwiftUI con @Observable. Contexto: "${ctx.text.slice(0, 60)}...". ¿Corremos las pruebas?`,
+  ],
+  ingenieria_despliegue: [
+    (ctx) =>
+      `Compuertas de Despliegue y DevOps verificadas (CI/CD 744, Source-Driven 749, Shipping & Launch 751). Valido pipelines GitHub Actions, invariantes AST y checklists de salida a producción para Vercel sin riesgos de regresión. Preparado para: "${ctx.text.slice(0, 60)}...".`,
+  ],
   general: [
     (ctx) =>
       `Entendido perfectamente, carnal. Registré: "${ctx.text.slice(0, 100)}". Estoy activa localmente desde el Nodo Cero en Hidalgo, lista para echarte la mano para investigar, analizar, programar o lo que haga falta. Cuéntame con más detalle y lo resolvemos.`,
@@ -529,8 +657,18 @@ export const OPEN_SCIENCE_MODELS = [
     license: "Apache-2.0",
     use: "embeddings",
   },
-  { id: "m2m100-418M", provider: "facebook/m2m100_418M", license: "MIT", use: "traducción" },
-  { id: "whisper-small-es", provider: "openai/whisper-small", license: "MIT", use: "STT es-MX" },
+  {
+    id: "m2m100-418M",
+    provider: "facebook/m2m100_418M",
+    license: "MIT",
+    use: "traducción",
+  },
+  {
+    id: "whisper-small-es",
+    provider: "openai/whisper-small",
+    license: "MIT",
+    use: "STT es-MX",
+  },
   {
     id: "coqui-tts-es-mx",
     provider: "coqui/XTTS-v2",

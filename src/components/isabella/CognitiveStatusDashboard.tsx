@@ -1,4 +1,3 @@
-/* eslint-disable security/detect-object-injection */
 import { useState, useEffect, useRef, type KeyboardEvent } from "react";
 import {
   Activity,
@@ -15,6 +14,7 @@ import {
   Filter,
 } from "lucide-react";
 import { toast } from "sonner";
+import { QuantumBridgeMonitor } from "@/components/quantum/QuantumBridgeMonitor";
 import metadata from "@/../metadata.json";
 
 interface CognitiveModule {
@@ -108,14 +108,26 @@ export function CognitiveStatusDashboard() {
   ]);
 
   const [lines, setLines] = useState<TerminalLine[]>([
-    { text: "ISABELLA ARCHITECTURE TERMINAL v" + metadata.operational.version, type: "header" },
-    { text: "Licencia: Creative Commons Attribution 4.0 International", type: "system" },
-    { text: "Conexión encriptada con Nodo Cero — Real del Monte, Hidalgo.", type: "success" },
+    {
+      text: "ISABELLA ARCHITECTURE TERMINAL v" + metadata.operational.version,
+      type: "header",
+    },
+    {
+      text: "Licencia: Creative Commons Attribution 4.0 International",
+      type: "system",
+    },
+    {
+      text: "Conexión encriptada con Nodo Cero — Real del Monte, Hidalgo.",
+      type: "success",
+    },
     {
       text: 'Ingresa "help" para ver la lista de comandos cognitivos disponibles.',
       type: "system",
     },
-    { text: "----------------------------------------------------------------", type: "system" },
+    {
+      text: "----------------------------------------------------------------",
+      type: "system",
+    },
   ]);
 
   const bufferEndRef = useRef<HTMLDivElement | null>(null);
@@ -481,6 +493,10 @@ export function CognitiveStatusDashboard() {
             Metadatos (.json)
           </button>
         </div>
+      </div>
+
+      <div className="mb-6">
+        <QuantumBridgeMonitor />
       </div>
 
       {activeTab === "modules" ? (

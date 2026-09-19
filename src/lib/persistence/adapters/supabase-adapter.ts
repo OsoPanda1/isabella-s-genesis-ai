@@ -27,27 +27,27 @@ function toSupabaseClient(url: string, key: string): SupabaseClient {
 /**
  * Cliente Supabase con la identidad del request (tenant-scoped, RLS).
  * P0-13: NUNCA usa service_role. Si hay principal autenticado, se reemite un
- * JWT de Isabella (mismo secreto AUTH_JWT_SECRET/SUPABASE_JWT_SECRET) para que
- * Supabase pueble `request.jwt.claims` con tenantId/role y RLS aplique.
+ * JWT firmado HS256 con `SUPABASE_JWT_SECRET` (Legacy JWT Secret de Supabase,
+ * no `AUTH_JWT_SECRET`) para que PostgREST pueble `request.jwt.claims` con
+ * tenantId/role y RLS aplique.
  * Sin identidad devuelve `null` (fail-closed; solo diagnóstico puede usar anon).
  */
-function getSupabase(): SupabaseClient | null {
+async function getSupabase(): Promise<SupabaseClient | null> {
   const cfg = config();
   const url = cfg.SUPABASE_URL;
   if (!url) return null;
   const identity = getRequestIdentity();
   if (!identity) return null;
-  const jwt = SecuritySystem.generateSovereignToken(
+  const jwt = await SecuritySystem.generateSovereignToken(
     identity.userId,
-    identity.role,
     identity.tenantId,
     identity.scope,
   );
   return toSupabaseClient(url, jwt);
 }
 
-function requireSupabase(tenantId?: string): SupabaseClient {
-  const client = getSupabase();
+async function requireSupabase(tenantId?: string): Promise<SupabaseClient> {
+  const client = await getSupabase();
   if (!client) {
     throw toRepositoryError(
       "Supabase require identidad de request (tenant-scoped) para operaciones RLS — sin principal autenticado; service_role prohibido (P0-13)",
@@ -69,11 +69,12 @@ export class SupabaseRepository<T extends { id: string }> implements IRepository
 
   async create(tenantId: string, data: Partial<T>, options?: WriteOptions): Promise<T> {
     if (!tenantId) throw toRepositoryError("tenantId required for create", 400);
-    const supabase = requireSupabase(tenantId);
-    const payload = { ...data, tenant_id: tenantId, tenantId: undefined } as Record<
-      string,
-      unknown
-    >;
+    const supabase = await requireSupabase(tenantId);
+    const payload = {
+      ...data,
+      tenant_id: tenantId,
+      tenantId: undefined,
+    } as Record<string, unknown>;
     // Map camelCase to snake_case for known fields
     const row = toSnake(payload);
     if (options?.idempotencyKey) {
@@ -87,7 +88,7 @@ export class SupabaseRepository<T extends { id: string }> implements IRepository
 
   async read(tenantId: string, id: string): Promise<T | null> {
     if (!tenantId) throw toRepositoryError("tenantId required for read", 400);
-    const supabase = requireSupabase(tenantId);
+    const supabase = await requireSupabase(tenantId);
     const { data, error } = await supabase
       .from(this.table)
       .select("*")
@@ -105,7 +106,7 @@ export class SupabaseRepository<T extends { id: string }> implements IRepository
     offset?: number,
   ): Promise<{ items: T[]; total: number }> {
     if (!tenantId) throw toRepositoryError("tenantId required for list", 400);
-    const supabase = requireSupabase(tenantId);
+    const supabase = await requireSupabase(tenantId);
     let query = supabase.from(this.table).select("*", { count: "exact" }).eq("tenant_id", tenantId);
     if (filters) {
       for (const [k, v] of Object.entries(filters)) {
@@ -123,7 +124,7 @@ export class SupabaseRepository<T extends { id: string }> implements IRepository
 
   async update(tenantId: string, id: string, data: Partial<T>): Promise<T> {
     if (!tenantId) throw toRepositoryError("tenantId required for update", 400);
-    const supabase = requireSupabase(tenantId);
+    const supabase = await requireSupabase(tenantId);
     const row = toSnake(data as Record<string, unknown>);
     const { data: updated, error } = await supabase
       .from(this.table)
@@ -139,7 +140,7 @@ export class SupabaseRepository<T extends { id: string }> implements IRepository
 
   async delete(tenantId: string, id: string): Promise<boolean> {
     if (!tenantId) throw toRepositoryError("tenantId required for delete", 400);
-    const supabase = requireSupabase(tenantId);
+    const supabase = await requireSupabase(tenantId);
     const { error, count } = await supabase
       .from(this.table)
       .delete({ count: "exact" })
@@ -150,7 +151,7 @@ export class SupabaseRepository<T extends { id: string }> implements IRepository
   }
 
   async audit(entry: AuditEntry): Promise<void> {
-    const supabase = requireSupabase(entry.tenantId);
+    const supabase = await requireSupabase(entry.tenantId);
     // P0-06: la columna canónica es `event` (no `action`), y la auditoría
     // transaccional exige verification_hash + previous_log_hash (hash chaining).
     const { createHash, randomUUID } = await import("node:crypto");
@@ -186,7 +187,7 @@ export class SupabaseRepository<T extends { id: string }> implements IRepository
   async health(): Promise<{ ok: boolean; latencyMs: number }> {
     const start = performance.now();
     try {
-      const supabase = getSupabase();
+      const supabase = await getSupabase();
       if (!supabase) return { ok: false, latencyMs: performance.now() - start };
       const { error } = await supabase.from(this.table).select("id").limit(1);
       return { ok: !error, latencyMs: performance.now() - start };
@@ -198,7 +199,7 @@ export class SupabaseRepository<T extends { id: string }> implements IRepository
   // Specialized lookup for API keys by prefix — avoids generic list for auth, tenant-agnostic then hash-verify
   // P0-04: la columna canónica en api_keys es `prefix`, no `key_prefix`.
   async findByPrefix(prefix: string): Promise<T | null> {
-    const supabase = getSupabase() ?? requireSupabase();
+    const supabase = (await getSupabase()) ?? (await requireSupabase());
     const { data, error } = await supabase
       .from(this.table)
       .select("*")

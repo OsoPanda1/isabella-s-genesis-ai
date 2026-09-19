@@ -16,6 +16,7 @@ import {
   type TelemetryRecord,
 } from "./audit-export";
 import { useIsabellaObservability } from "@/hooks/use-isabella-observability";
+import { randomUUID } from "@/lib/browser-node-crypto";
 
 export interface TerminalMessage {
   id: string;
@@ -25,26 +26,20 @@ export interface TerminalMessage {
   decision?: RoutingDecision;
   streaming?: boolean;
   error?: boolean;
-  /** Proveedor real de la respuesta; "native-fallback" = clasificador local, NO LLM. */
   provider?: string;
-  /** True cuando la respuesta se generó en modo degradado declarado. */
   degraded?: boolean;
   attachments?: Attachment[];
 }
-
 const now = () =>
   new Date().toLocaleTimeString("es-MX", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
-
-const uid = () => Math.random().toString(36).slice(2, 11);
-
+const uid = () => randomUUID();
 const STORAGE_KEY = "isabella.session.v1";
 const TELEMETRY_KEY = "isabella.telemetry.v1";
 const PRESET_KEY = "isabella.preset.v1";
-
 const BOOT: TerminalMessage = {
   id: "boot",
   role: "system",
@@ -52,7 +47,6 @@ const BOOT: TerminalMessage = {
     "Núcleo C.R.O.W.N. sincronizado · ISA · SOPHIA · ORION · ARGUS en línea · Nodo Cero, Real del Monte, Hidalgo. Presencia establecida.",
   timestamp: "--:--:--",
 };
-
 function loadSession(): TerminalMessage[] | null {
   if (typeof window === "undefined") return null;
   try {
@@ -65,22 +59,38 @@ function loadSession(): TerminalMessage[] | null {
     return null;
   }
 }
+const TRANSPORT_TEXT_LIMIT = 12_000;
+const TRANSPORT_ATTACHMENT_LIMIT = 8;
 
-/** Bloques de contenido multimodal para el gateway. */
+type SendConfig = {
+  mode?: "fast" | "deep_reasoning" | "web_research" | "agent_tools";
+  webSearch?: boolean;
+  toolsEnabled?: boolean;
+};
+
+function normalizeTransportText(value: string, fallback = "Analiza el material adjunto.") {
+  const normalized = value.trim().slice(0, TRANSPORT_TEXT_LIMIT);
+  return normalized || fallback;
+}
+
 function buildContent(text: string, attachments?: Attachment[]) {
-  if (!attachments?.length) return text;
-  const blocks: unknown[] = [{ type: "text", text: text || "Analiza el material adjunto." }];
-  for (const a of attachments) {
-    if (a.kind === "image") {
-      blocks.push({ type: "image_url", image_url: { url: a.dataUrl } });
-    } else {
-      blocks.push({
-        type: "input_audio",
-        input_audio: {
-          data: a.dataUrl.split(",")[1] ?? "",
-          format: audioFormatFromMime(a.mime),
-        },
-      });
+  const safeAttachments = attachments?.slice(0, TRANSPORT_ATTACHMENT_LIMIT) ?? [];
+  if (!safeAttachments.length) return normalizeTransportText(text);
+  const blocks: unknown[] = [{ type: "text", text: normalizeTransportText(text) }];
+  for (const a of safeAttachments) {
+    if (a.kind === "image" && a.dataUrl) {
+      blocks.push({ type: "image_url", image_url: { url: a.dataUrl.slice(0, 11_000_000) } });
+    } else if (a.kind === "audio" && a.dataUrl) {
+      const data = a.dataUrl.split(",")[1] ?? "";
+      if (data) {
+        blocks.push({
+          type: "input_audio",
+          input_audio: {
+            data: data.slice(0, 11_000_000),
+            format: audioFormatFromMime(a.mime),
+          },
+        });
+      }
     }
   }
   return blocks;
@@ -97,10 +107,7 @@ export function useIsabella() {
   const [runId] = useState(() => `run-${uid()}`);
   const abortRef = useRef<AbortController | null>(null);
   const { logLifecycleEvent, validatePayload } = useIsabellaObservability();
-
   const preset: Preset = PRESETS.find((p) => p.id === presetId) ?? (PRESETS[0] as Preset);
-
-  // Rehidratación del historial y de la telemetría auditada.
   useEffect(() => {
     const restored = loadSession();
     if (restored) setMessages(restored);
@@ -110,56 +117,45 @@ export function useIsabella() {
       const rawTel = window.localStorage.getItem(TELEMETRY_KEY);
       if (rawTel) setTelemetry(JSON.parse(rawTel) as TelemetryRecord[]);
     } catch {
-      /* almacenamiento no disponible */
+      /* storage unavailable */
     }
     setHydrated(true);
   }, []);
-
-  // Persistencia por sesión (se purga al cerrar la pestaña).
   useEffect(() => {
     if (!hydrated || typeof window === "undefined") return;
     try {
       window.sessionStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ savedAt: new Date().toISOString(), presetId, messages }),
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          presetId,
+          messages,
+        }),
       );
       window.localStorage.setItem(PRESET_KEY, presetId);
       window.localStorage.setItem(TELEMETRY_KEY, JSON.stringify(telemetry.slice(-200)));
     } catch {
-      /* cuota agotada: la sesión sigue viva en memoria */
+      /* session remains in memory */
     }
   }, [messages, presetId, telemetry, hydrated]);
 
   const send = useCallback(
-    async (input: string, attachments: Attachment[] = []) => {
+    async (input: string, attachments: Attachment[] = [], config: SendConfig = {}) => {
       const text = input.trim();
       if ((!text && attachments.length === 0) || isProcessing) return;
-
-      logLifecycleEvent("INIT", { input: text, attachmentsCount: attachments.length });
-
-      // Apply robust serialization protocol to validate the outgoing payload
+      logLifecycleEvent("INIT", {
+        input: text,
+        attachmentsCount: attachments.length,
+      });
       const validatedPayload = validatePayload(text, attachments);
       if (!validatedPayload) {
-         logLifecycleEvent("ERROR", { reason: "Payload validation failed" });
-         return;
-      }
-
-      logLifecycleEvent("SANITIZATION", { validatedPayload });
-
-      const skillResolution = resolveSkillInvocation(validatedPayload.text || "");
-      if (skillResolution && "error" in skillResolution) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: uid(),
-            role: "system",
-            content: `ARGUS :: ${skillResolution.error}`,
-            timestamp: now(),
-            error: true,
-          },
-        ]);
+        logLifecycleEvent("ERROR", { reason: "Payload validation failed" });
         return;
       }
+      logLifecycleEvent("SANITIZATION", { validatedPayload });
+      const skillResolution = resolveSkillInvocation(validatedPayload.text || "");
+      const skillWarning =
+        skillResolution && "error" in skillResolution ? skillResolution.error : null;
       const skillContext =
         skillResolution && "skill" in skillResolution
           ? `\n\n[SKILL AUTORIZADO: ${skillResolution.skill.id}]\n${skillResolution.skill.description}`
@@ -169,50 +165,51 @@ export function useIsabella() {
       const routing = route(effectiveText || "material adjunto", preset);
       setDecision(routing);
       setTelemetry((prev) => [...prev, toTelemetryRecord(routing, preset.id)]);
-      
-      logLifecycleEvent("PAYLOAD_CONSTRUCTION", { presetId: preset.id, routing });
-
+      logLifecycleEvent("PAYLOAD_CONSTRUCTION", {
+        presetId: preset.id,
+        routing,
+      });
       const { getSessionToken, ensureSessionToken, setSessionToken } =
         await import("@/lib/auth-client");
       let token = getSessionToken();
-      if (!token) {
-        // Dev fallback: intenta sesión soberana sin OAuth (solo development + ALLOW_DEV_AUTH_FALLBACK)
-        try {
-          const devRes = await fetch("/api/db?action=dev-session", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-          });
-          if (devRes.ok) {
-            const devData = (await devRes.json()) as { token?: string; userId?: string };
-            if (devData.token) {
-              const { setStoredSovereignUserId } = await import("@/lib/auth-client");
-              setSessionToken(devData.token);
-              if (devData.userId) setStoredSovereignUserId(devData.userId);
-              token = devData.token;
-            }
+      try {
+        // Refresh the preview session on every send. Preview/serverless workers can
+        // rotate their in-memory session state while the browser keeps an old JWT.
+        // Production rejects this endpoint and continues with the real token.
+        const devRes = await fetch("/api/db?action=dev-session", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+        });
+        if (devRes.ok) {
+          const devData = (await devRes.json()) as {
+            token?: string;
+            userId?: string;
+          };
+          if (devData.token) {
+            const { setStoredSovereignUserId } = await import("@/lib/auth-client");
+            setSessionToken(devData.token);
+            if (devData.userId) setStoredSovereignUserId(devData.userId);
+            token = devData.token;
           }
-        } catch (e) {
-          void e;
         }
+      } catch {
+        /* Development auth is optional; keep the real session when unavailable. */
       }
       if (!token) {
         try {
           token = await ensureSessionToken();
         } catch {
-          // En dev sin OAuth configurado, permite request sin token — el backend hará fail-closed controlado
           token = "";
         }
       }
-
       const userMsg: TerminalMessage = {
         id: uid(),
         role: "user",
-        content: input.trim(),
+        content: effectiveText || normalizeTransportText(text),
         timestamp: now(),
         attachments,
       };
       const replyId = uid();
-
       const history = [...messages, userMsg]
         .filter((m) => m.role !== "system" && !m.error)
         .slice(-16)
@@ -220,9 +217,19 @@ export function useIsabella() {
           role: m.role === "user" ? ("user" as const) : ("assistant" as const),
           content: buildContent(m.content, m.attachments),
         }));
-
       setMessages((prev) => [
         ...prev,
+        ...(skillWarning
+          ? [
+              {
+                id: uid(),
+                role: "system" as const,
+                content: `ARGUS :: ${skillWarning} La conversación continúa sin ejecutar esa capacidad.`,
+                timestamp: now(),
+                error: true,
+              },
+            ]
+          : []),
         userMsg,
         {
           id: replyId,
@@ -234,10 +241,8 @@ export function useIsabella() {
         },
       ]);
       setIsProcessing(true);
-
       const controller = new AbortController();
       abortRef.current = controller;
-
       try {
         logLifecycleEvent("SEND", { endpoint: "/api/isabella" });
         const res = await fetch("/api/isabella", {
@@ -248,34 +253,55 @@ export function useIsabella() {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            system: buildSystemPrompt(routing, preset) + skillContext,
+            system: (buildSystemPrompt(routing, preset) + skillContext).slice(0, 8000),
             temperature: preset.temperature,
             messages: history,
-            context: validatedPayload.context,
+            context: {
+              source: "isabella",
+              preset: preset.id,
+              runId,
+              executionMode: config.mode ?? "fast",
+              webSearch: config.webSearch ?? false,
+              toolsEnabled: config.toolsEnabled ?? false,
+            },
           }),
         });
-
         if (!res.ok || !res.body) {
-          const detail = await res
-            .json()
-            .catch(() => ({ error: "Fallo de percepción." }) as { error?: string; message?: string });
-          throw new Error(detail.message ?? detail.error ?? "Fallo de percepción.");
+          const detail = await res.json().catch(
+            () =>
+              ({ error: "Fallo de percepción." }) as {
+                error?: string;
+                message?: string;
+              },
+          );
+          const rawMessage = detail.message ?? detail.error ?? "Fallo de percepción.";
+          if (
+            res.status === 403 &&
+            typeof rawMessage === "string" &&
+            /tenant|aislamiento/i.test(rawMessage)
+          ) {
+            try {
+              window.sessionStorage.removeItem("isabella_session_token");
+            } catch {
+              // El siguiente intento aún puede obtener una sesión nueva del servidor.
+            }
+            throw new Error("Sesión renovada requerida. Reintenta la percepción.");
+          }
+          throw new Error(typeof rawMessage === "string" ? rawMessage : JSON.stringify(rawMessage));
         }
-
-        // Modo degradado declarado por el servidor (header + payload).
         const degradedHeader = res.headers.get("x-isabella-degraded-mode");
         const degradedMode = degradedHeader && degradedHeader.length > 0 ? degradedHeader : null;
-
+        const providerHeader = res.headers.get("x-isabella-provider");
+        const modelHeader = res.headers.get("x-isabella-model");
+        const traceHeader = res.headers.get("x-isabella-trace-id");
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
         let acc = "";
-
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-
           let nl: number;
           while ((nl = buffer.indexOf("\n")) !== -1) {
             const line = buffer.slice(0, nl).trim();
@@ -284,18 +310,22 @@ export function useIsabella() {
             const payload = line.slice(5).trim();
             if (payload === "[DONE]") continue;
             try {
-              const json = JSON.parse(payload);
-              const delta: string | undefined = json.choices?.[0]?.delta?.content;
-              if (typeof json.provider === "string" || json.degraded === true) {
-                const provider = typeof json.provider === "string" ? json.provider : "unknown";
+              const event = JSON.parse(payload);
+              const delta: string | undefined = event.choices?.[0]?.delta?.content;
+              const provider = typeof event.provider === "string" ? event.provider : providerHeader;
+              const model = typeof event.model === "string" ? event.model : modelHeader;
+              if (provider || model || event.degraded === true)
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === replyId
-                      ? { ...m, provider, degraded: json.degraded === true || degradedMode !== null }
+                      ? {
+                          ...m,
+                          provider: provider ?? m.provider,
+                          degraded: event.degraded === true || degradedMode !== null,
+                        }
                       : m,
                   ),
                 );
-              }
               if (delta) {
                 acc += delta;
                 setTokens((t) => t + 1);
@@ -304,24 +334,27 @@ export function useIsabella() {
                 );
               }
             } catch {
-              /* fragmento parcial */
+              /* incomplete SSE frame */
             }
           }
         }
-
         buffer += decoder.decode();
         for (const line of buffer.split(/\r?\n/)) {
-          if (!line.trim().startsWith("data:") || line.trim().slice(5).trim() === "[DONE]")
-            continue;
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:") || trimmed.slice(5).trim() === "[DONE]") continue;
           try {
-            const json = JSON.parse(line.trim().slice(5).trim());
+            const json = JSON.parse(trimmed.slice(5).trim());
             const delta: string | undefined = json.choices?.[0]?.delta?.content;
             if (delta) acc += delta;
           } catch {
-            /* final incomplete event is safely ignored */
+            /* final incomplete event */
           }
         }
-
+        if (!acc.trim()) {
+          throw new Error(
+            "El proveedor de inferencia cerró el stream sin emitir síntesis. Reintenta la percepción.",
+          );
+        }
         setMessages((prev) =>
           prev.map((m) =>
             m.id === replyId
@@ -329,26 +362,37 @@ export function useIsabella() {
                   ...m,
                   streaming: false,
                   degraded: m.degraded ?? degradedMode !== null,
-                  provider: m.provider ?? (degradedMode !== null ? "native-fallback" : "gemini"),
-                  content:
-                    acc || "Silencio cognitivo: el núcleo no emitió síntesis para esta percepción.",
+                  provider: m.provider ?? providerHeader ?? "gemini",
+                  content: acc,
                 }
               : m,
           ),
         );
-        logLifecycleEvent("SUCCESS", { tokens: acc.length });
+        logLifecycleEvent("SUCCESS", {
+          tokens: acc.length,
+          traceId: traceHeader,
+          provider: providerHeader,
+          model: modelHeader,
+        });
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           setMessages((prev) => prev.filter((m) => m.id !== replyId));
           return;
         }
         const message = err instanceof Error ? err.message : "Interrupción del núcleo.";
-        logLifecycleEvent("ERROR", { reason: message });
+        const isGatewayFailure = /502|sandbox is not listening|requested port|gateway/i.test(
+          message,
+        );
+        const userMessage = isGatewayFailure
+          ? "CANAL DE INFERENCIA NO DISPONIBLE :: El servidor de síntesis no está escuchando en este momento. Reintenta la percepción; ARGUS no bloqueó esta conversación."
+          : `ERROR DE PERCEPCIÓN :: ${message}`;
+        logLifecycleEvent("ERROR", {
+          reason: message,
+          category: isGatewayFailure ? "gateway" : "runtime",
+        });
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === replyId
-              ? { ...m, streaming: false, error: true, content: `ARGUS :: ${message}` }
-              : m,
+            m.id === replyId ? { ...m, streaming: false, error: true, content: userMessage } : m,
           ),
         );
       } finally {
@@ -356,11 +400,9 @@ export function useIsabella() {
         abortRef.current = null;
       }
     },
-    [isProcessing, messages, preset, logLifecycleEvent, validatePayload],
+    [isProcessing, messages, preset, logLifecycleEvent, validatePayload, runId],
   );
-
   const stop = useCallback(() => abortRef.current?.abort(), []);
-
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setMessages([
@@ -375,8 +417,6 @@ export function useIsabella() {
     setDecision(null);
     setTokens(0);
   }, []);
-
-  /** Descarga la conversación completa en JSON auditable. */
   const downloadConversation = useCallback(() => {
     const payload = {
       artifact: "isabella.conversation",
@@ -388,7 +428,9 @@ export function useIsabella() {
       messages,
       telemetry,
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -396,18 +438,17 @@ export function useIsabella() {
     a.click();
     URL.revokeObjectURL(url);
   }, [messages, presetId, telemetry, runId]);
-
-  /** Reabre la conversación exportada previamente. */
   const openConversation = useCallback(async (file: File) => {
     const raw = await file.text();
-    const parsed = JSON.parse(raw) as { messages?: TerminalMessage[]; presetId?: PresetId };
-    if (!Array.isArray(parsed.messages) || parsed.messages.length === 0) {
+    const parsed = JSON.parse(raw) as {
+      messages?: TerminalMessage[];
+      presetId?: PresetId;
+    };
+    if (!Array.isArray(parsed.messages) || parsed.messages.length === 0)
       throw new Error("Archivo de conversación inválido.");
-    }
     abortRef.current?.abort();
-    if (parsed.presetId && PRESETS.some((p) => p.id === parsed.presetId)) {
+    if (parsed.presetId && PRESETS.some((p) => p.id === parsed.presetId))
       setPresetId(parsed.presetId);
-    }
     setMessages([
       ...parsed.messages.map((m) => ({ ...m, streaming: false })),
       {
@@ -419,13 +460,11 @@ export function useIsabella() {
     ]);
     setDecision(null);
   }, []);
-
   const exportCsv = useCallback(() => exportTelemetryCsv(telemetry, runId), [telemetry, runId]);
   const exportPdf = useCallback(
     () => void exportTelemetryPdf(telemetry, runId, preset.name),
     [telemetry, runId, preset.name],
   );
-
   return {
     messages,
     send,

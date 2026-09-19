@@ -109,7 +109,12 @@ export async function flushOtelOutbox(): Promise<OtelFlushResult> {
   if (!url) {
     // Sin collector configurado: se descarta el lote (el buffer en memoria
     // conserva los últimos 500 para depuración local). Documentado, no silente.
-    return { attempted: false, delivered: false, count: batch.length, error: "no-endpoint" };
+    return {
+      attempted: false,
+      delivered: false,
+      count: batch.length,
+      error: "no-endpoint",
+    };
   }
 
   const controller = new AbortController();
@@ -130,7 +135,9 @@ export async function flushOtelOutbox(): Promise<OtelFlushResult> {
               logRecords: batch.map((log) => ({
                 timeUnixNano: toUnixNano(log.timestamp),
                 severityText: log.level.toUpperCase(),
-                body: { stringValue: `${log.moduleId}:${log.coreId}:${log.eventName}` },
+                body: {
+                  stringValue: `${log.moduleId}:${log.coreId}:${log.eventName}`,
+                },
                 attributes: [
                   attribute("isabella.trace_id", log.traceId),
                   attribute("isabella.correlation_id", log.correlationId),
@@ -162,7 +169,12 @@ export async function flushOtelOutbox(): Promise<OtelFlushResult> {
     return { attempted: true, delivered: true, count: batch.length };
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown";
-    return { attempted: true, delivered: false, count: batch.length, error: message };
+    return {
+      attempted: true,
+      delivered: false,
+      count: batch.length,
+      error: message,
+    };
   } finally {
     clearTimeout(timeout);
   }

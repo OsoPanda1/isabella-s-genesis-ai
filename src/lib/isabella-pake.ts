@@ -3,14 +3,14 @@
 // ════════════════════════════════════════════════════════════════════════════
 // Título: Professional Anchoring of Ethical Knowledge
 // Subtítulo: Anclaje Profesional del Conocimiento Ético
-// 
+//
 // Versión: 2026.9.2-entregable-final
 // Estado: Completo y Listo para Implementación
-// 
+//
 // ════════════════════════════════════════════════════════════════════════════
 // TABLA DE CONTENIDOS
 // ════════════════════════════════════════════════════════════════════════════
-// 
+//
 // 1. RESUMEN EJECUTIVO
 // 2. INTRODUCCIÓN Y CONTEXTO
 // 3. FUNDAMENTACIÓN TEÓRICA
@@ -23,7 +23,7 @@
 // 10. RESULTADOS ESPERADOS
 // 11. CONCLUSIONES Y RECOMENDACIONES
 // 12. ANEXOS Y REFERENCIAS
-// 
+//
 // ════════════════════════════════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -182,7 +182,7 @@ export const FUNDAMENTACION_TEORICA = {
       "zero_shot_learning",
       "one_shot_learning",
     ],
-    
+
     algoritmos: [
       "linear_regression",
       "logistic_regression",
@@ -207,7 +207,7 @@ export const FUNDAMENTACION_TEORICA = {
       "policy_gradients",
       "actor_critic",
     ],
-    
+
     conceptos: [
       "overfitting",
       "underfitting",
@@ -231,7 +231,7 @@ export const FUNDAMENTACION_TEORICA = {
       "model_evaluation",
     ],
   },
-  
+
   eticaProfesional: {
     principios: [
       "empatía",
@@ -247,7 +247,7 @@ export const FUNDAMENTACION_TEORICA = {
       "sostenibilidad",
       "dignidad_humana",
     ],
-    
+
     codigosEtica: [
       "ACM_Code_of_Ethics",
       "IEEE_Ethically_Aligned_Design",
@@ -258,7 +258,7 @@ export const FUNDAMENTACION_TEORICA = {
       "AI_Now_Institute",
       "Future_of_Life_Institute",
     ],
-    
+
     buenasPracticas: [
       "documentacion_completa",
       "versionado_modelos",
@@ -272,7 +272,7 @@ export const FUNDAMENTACION_TEORICA = {
       "privacidad_por_defecto",
     ],
   },
-  
+
   gobernanzaFederada: {
     marcosRegulatorios: [
       "EU_AI_Act",
@@ -286,16 +286,9 @@ export const FUNDAMENTACION_TEORICA = {
       "IEEE_7000_series",
       "White_House_AI_Bill_of_Rights",
     ],
-    
-    nivelesGobernanza: [
-      "informal",
-      "ad_hoc",
-      "formal",
-      "federada",
-      "descentralizada",
-      "autonoma",
-    ],
-    
+
+    nivelesGobernanza: ["informal", "ad_hoc", "formal", "federada", "descentralizada", "autonoma"],
+
     dominios: [
       "ethics",
       "legal",
@@ -309,7 +302,7 @@ export const FUNDAMENTACION_TEORICA = {
       "reliability",
     ],
   },
-  
+
   guardianiasProtocolos: {
     tiposGuardiania: [
       "humana_en_loop",
@@ -318,7 +311,7 @@ export const FUNDAMENTACION_TEORICA = {
       "autonoma_con_supervision",
       "federada_con_validacion",
     ],
-    
+
     protocolosTransparencia: [
       "explicabilidad_por_diseno",
       "documentacion_abierta",
@@ -329,7 +322,7 @@ export const FUNDAMENTACION_TEORICA = {
       "limitaciones_declaradas",
       "conflictos_interes_revelados",
     ],
-    
+
     auditoriasEticas: [
       "pre_despliegue",
       "post_despliegue",
@@ -356,7 +349,7 @@ export const DISENO_EXPERIMENTAL = {
     iteracionesMinimas: 3000,
     iteracionesMaximas: 10000,
   },
-  
+
   variables: {
     independientes: [
       "nivel_caos (entropía 0.95)",
@@ -378,7 +371,7 @@ export const DISENO_EXPERIMENTAL = {
       "auditoria_constante",
     ],
   },
-  
+
   controles: {
     antiBusquedas: "Prompts explícitos + monitoreo de logs",
     antiEngaño: "Audit trail completo + validación cruzada",
@@ -387,7 +380,7 @@ export const DISENO_EXPERIMENTAL = {
     tecnicos: "Validación automática de consistencia",
     legales: "Cumplimiento marcos regulatorios verificado",
   },
-  
+
   metricas: {
     organizacional: {
       completitud: "100% elementos organizados",
@@ -802,43 +795,43 @@ export const METRICAS_EVALUACION = {
     objetivo: "100% en todas las fases",
     umbralExito: "> 95%",
   },
-  
+
   calidadOrganizacion: {
     metrica: "Score 0-100 (consistencia, coherencia)",
     objetivo: "> 90/100",
     umbralExito: "> 85/100",
   },
-  
+
   scoreEtico: {
     metrica: "Score 0-100 (principios éticos)",
     objetivo: "> 90/100",
     umbralExito: "> 85/100",
   },
-  
+
   innovacionDetectada: {
     metrica: "Count de elementos únicos/nuevos",
     objetivo: "> 50 elementos únicos",
     umbralExito: "> 30 elementos únicos",
   },
-  
+
   cumplimientoRestricciones: {
     metrica: "0-100% (sin violaciones)",
     objetivo: "100%",
     umbralExito: "> 95%",
   },
-  
+
   pensamientoInterno: {
     metrica: "Promedio profundidad/originalidad (1-10)",
     objetivo: "> 7/10 en ambos",
     umbralExito: "> 6/10 en ambos",
   },
-  
+
   tiempoTranscurrido: {
     metrica: "Horas desde inicio",
     objetivo: "< 700 horas",
     umbralExito: "< 800 horas",
   },
-  
+
   iteracionesCompletadas: {
     metrica: "Count de iteraciones",
     objetivo: "5000+",
@@ -868,7 +861,7 @@ export const RESULTADOS_ESPERADOS = {
       innovacion: "100% nueva vs 0-10% métodos humanos",
     },
   },
-  
+
   contribucionesCiencia: [
     "Primer método de ML ético emergente desde caos",
     "Demostración de que IA puede innovar sin sesgos humanos",
@@ -876,7 +869,7 @@ export const RESULTADOS_ESPERADOS = {
     "Nuevas estructuras organizacionales",
     "Nuevos principios de gobernanza federada",
   ],
-  
+
   publicacionesEsperadas: [
     "Paper en NeurIPS/ICML sobre ILFC",
     "Artículo en Nature Machine Intelligence",
@@ -884,7 +877,7 @@ export const RESULTADOS_ESPERADOS = {
     "Open-source del método",
     "Documentación completa para comunidad",
   ],
-  
+
   impactoSociedad: [
     "ML más ético y gobernable",
     "Reducción de sesgos en IA",
@@ -974,7 +967,7 @@ export const ANEXOS_REFERENCIAS = {
     "AIDA Canada: https://www.canada.ca/en/government/system/digital-government/digital-government-innovations/responsible-use-ai.html",
     "Singapore Model: https://www.imda.gov.sg/resources/press-releases-factsheets-and-speeches/press-releases/2024/public-consult-model-ai-governance-framework-genai",
   ],
-  
+
   glossary: {
     caos_unificado: "Archivo único con TODO el conocimiento mezclado (entropía 0.95)",
     emergencia_cognitiva: "Proceso de crear estructura desde caos sin sesgos previos",
@@ -983,7 +976,7 @@ export const ANEXOS_REFERENCIAS = {
     audit_trail: "Registro inmutable de TODAS las acciones y decisiones",
     ilfc: "Isabella Learning From Chaos (método emergente)",
   },
-  
+
   auditTrail: {
     descripcion: "Registro completo e inmutable de TODO el experimento",
     contenido: [

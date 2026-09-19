@@ -55,7 +55,10 @@ export class BookPiEngine {
   private static readonly CHUNK_SIZE = 64 * 1024; // 64 KiB
 
   /** Divide un buffer en fragmentos de 64 KB y calcula su hash SHA-256. */
-  public static chunkBuffer(buffer: Buffer): { hashes: string[]; rawChunks: Buffer[] } {
+  public static chunkBuffer(buffer: Buffer): {
+    hashes: string[];
+    rawChunks: Buffer[];
+  } {
     const hashes: string[] = [];
     const rawChunks: Buffer[] = [];
     let offset = 0;
@@ -69,7 +72,10 @@ export class BookPiEngine {
   }
 
   /** Construye el árbol binario de Merkle y retorna la raíz + niveles. */
-  public static buildMerkleTree(leafHashes: string[]): { root: string; tree: string[][] } {
+  public static buildMerkleTree(leafHashes: string[]): {
+    root: string;
+    tree: string[][];
+  } {
     if (leafHashes.length === 0) {
       throw new Error("No se pueden procesar hojas vacías para el árbol de Merkle.");
     }
@@ -128,7 +134,8 @@ export class BookPiEngine {
   public static verifyChunkProof(proof: ChunkProof): boolean {
     let currentHash = proof.chunkHash;
     for (const step of proof.proofPath) {
-      const concatenated = step.position === "left" ? step.hash + currentHash : currentHash + step.hash;
+      const concatenated =
+        step.position === "left" ? step.hash + currentHash : currentHash + step.hash;
       currentHash = sha256Hex(concatenated);
     }
     return currentHash.toLowerCase() === proof.root.toLowerCase();
@@ -158,7 +165,9 @@ export class BookPiEngine {
     const { hashes } = this.chunkBuffer(payload.fileBuffer);
     const { root: merkleRoot } = this.buildMerkleTree(hashes);
 
-    const payloadHash = sha256Hex(`${merkleRoot}:${payload.authorId}:${payload.title}:${payload.category}`);
+    const payloadHash = sha256Hex(
+      `${merkleRoot}:${payload.authorId}:${payload.title}:${payload.category}`,
+    );
 
     const { commitment: zkCommitment } = this.generateZKCommitment(
       merkleRoot,

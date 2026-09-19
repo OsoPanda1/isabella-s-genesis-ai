@@ -20,13 +20,27 @@ export class ApiGateway {
     resource: Resource,
     action: Action,
     schema: {
-      safeParse: (data: unknown) => { success: boolean; data?: T; error?: { message: string } };
+      safeParse: (data: unknown) => {
+        success: boolean;
+        data?: T;
+        error?: { message: string };
+      };
     },
     handler: (context: PrincipalContext, data: T) => Promise<Response>,
   ): Promise<Response> {
     const headers = SecuritySystem.injectSecureHeaders(
       new Headers({ "content-type": "application/json" }),
     );
+    const method = request.method.toUpperCase();
+    const bodyMethods = new Set(["POST", "PUT", "PATCH"]);
+    const maxBodyBytes = 512 * 1024;
+    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    if (bodyMethods.has(method) && Number.isFinite(contentLength) && contentLength > maxBodyBytes) {
+      return new Response(JSON.stringify({ error: "Payload excede el límite permitido." }), {
+        status: 413,
+        headers,
+      });
+    }
 
     // 1. Autenticación y resolución de Principal Context
     const authResult = await PrincipalContext.authorize(request);
@@ -64,7 +78,7 @@ export class ApiGateway {
 
     // 3. Procesamiento seguro de payload de entrada
     let parsedData: T = {} as T;
-    if (request.method === "POST" || request.method === "PUT" || request.method === "PATCH") {
+    if (bodyMethods.has(method)) {
       try {
         const rawBody = await request.clone().json();
         const validation = schema.safeParse(rawBody);
@@ -79,7 +93,9 @@ export class ApiGateway {
         parsedData = validation.data!;
       } catch {
         return new Response(
-          JSON.stringify({ error: "Payload corrupto detectado por la puerta de enlace." }),
+          JSON.stringify({
+            error: "Payload corrupto detectado por la puerta de enlace.",
+          }),
           { status: 400, headers },
         );
       }

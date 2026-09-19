@@ -145,7 +145,10 @@ export function permissionFor(resource: Resource, action: Action): DerivedPermis
       reason: `La operación (${resource}, ${action}) está prohibida para toda identidad.`,
     };
   }
-  return { permission, reason: `Permiso requerido para (${resource}, ${action}).` };
+  return {
+    permission,
+    reason: `Permiso requerido para (${resource}, ${action}).`,
+  };
 }
 
 /**

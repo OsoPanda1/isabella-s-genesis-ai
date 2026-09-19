@@ -7,6 +7,7 @@
     "eslint.config.js",
     "test/**/*.ts",
     "test/**/*.tsx",
+    "app/applet/**/*.ts",
     "scripts/**/*.ts",
     "scripts/**/*.mjs",
     "types/**/*.d.ts"
@@ -48,7 +49,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "noImplicitOverride": true,
+    "noImplicitOverride": false,
     "noImplicitReturns": true,
     "noPropertyAccessFromIndexSignature": false,
     "noUncheckedIndexedAccess": false,

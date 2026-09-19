@@ -3,18 +3,16 @@
  * -----------------------------------------------------------------
  * Persistencia e integridad de la memoria jerárquica soberana.
  * Real, sin mockdata:
- *  - Cada registro lleva un hash de contenido y una cadena de integridad
- *    (cada entrada encadena con la anterior) para anti-tampering.
- *  - Se persiste en disco con I/O real (`node:fs`), nunca valores de relleno.
- *  - Retención mínima necesaria: los registros caducados se purgan.
- *
- * La DECISIÓN de acceso la toma `memory-engine.ts`; este repositorio solo
- * persiste, recupera y garantiza integridad/expiración de forma real.
+ *  - Cada registro lleva un hash de contenido y una cadena de integridad.
+ *  - Se persiste en disco solo en entornos explícitamente autorizados.
+ *  - En producción/Vercel no se permite el fallback JSON no durable.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { config } from "@/lib/config";
+import { isProductionLike, resolveRuntimeMode } from "@/lib/runtime-mode";
 
 export type MemoryScope = "turn" | "session" | "project" | "territorial" | "historical";
 export type MemorySource = "user" | "system" | "tool" | "document";
@@ -48,20 +46,38 @@ export interface MemoryStoreFile {
 const GENESIS_CHAIN_HASH = "0000000000000000000000000000000000000000000000000000000000000000";
 const STORE_PATH = path.join(process.cwd(), "isabella_memory_store.json");
 
+const storeLocks = new Map<string, Promise<unknown>>();
+function withStoreLock<T>(storePath: string, task: () => T | Promise<T>): Promise<T> {
+  const previous = storeLocks.get(storePath) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(task);
+  storeLocks.set(
+    storePath,
+    next.catch(() => undefined),
+  );
+  return next;
+}
+
 function sha256(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex");
 }
 
-/**
- * Crea un repositorio de memoria ligado a una ruta opcional (inyectable para
- * entornos aislados/test). Real y fail-closed: si el archivo no existe o es
- * inválido, empieza con estado vacío legítimo (no datos de relleno).
- */
+function assertFilePersistenceAllowed(storePath: string): void {
+  const runtime = resolveRuntimeMode(config().ISABELLA_RUNTIME_MODE);
+  const production = isProductionLike(runtime);
+  const vercel = config().VERCEL;
+  const defaultStore = path.resolve(storePath) === path.resolve(STORE_PATH);
+  if (defaultStore && (production || vercel) && !config().DURABLE_JSON_ALLOWED) {
+    throw new Error(
+      "memory_persistence_unavailable: durable PostgreSQL/Supabase memory repository required",
+    );
+  }
+}
+
 export function createMemoryRepository(storePath: string = STORE_PATH) {
+  assertFilePersistenceAllowed(storePath);
+
   function loadStore(): MemoryStoreFile {
-    if (!fs.existsSync(storePath)) {
-      return { records: [], genesisChainHash: GENESIS_CHAIN_HASH };
-    }
+    if (!fs.existsSync(storePath)) return { records: [], genesisChainHash: GENESIS_CHAIN_HASH };
     try {
       const raw = fs.readFileSync(storePath, "utf-8");
       const parsed = JSON.parse(raw) as Partial<MemoryStoreFile>;
@@ -87,43 +103,42 @@ export function createMemoryRepository(storePath: string = STORE_PATH) {
   }
 
   return {
-    /** Verifica la integridad de la cadena completa de memoria. */
-    verifyIntegrity(): { success: boolean; error?: string; corruptedId?: string } {
+    verifyIntegrity(): {
+      success: boolean;
+      error?: string;
+      corruptedId?: string;
+    } {
       const store = loadStore();
       let prev = store.genesisChainHash;
       for (const record of store.records) {
-        if (record.previousChainHash && record.previousChainHash !== prev) {
+        if (record.previousChainHash && record.previousChainHash !== prev)
           return {
             success: false,
             error: `Cadena de memoria rota en [${record.id}].`,
             corruptedId: record.id,
           };
-        }
         const contentHash = sha256(
           `${record.id}|${record.tenantId}|${record.content}|${record.source}|${record.scope}|${record.sensitivity}`,
         );
-        if (record.contentHash !== contentHash) {
+        if (record.contentHash !== contentHash)
           return {
             success: false,
             error: `Contenido alterado en [${record.id}].`,
             corruptedId: record.id,
           };
-        }
         const expectedChain = sha256(`${prev}|${record.contentHash}`);
-        if (record.chainHash !== expectedChain) {
+        if (record.chainHash !== expectedChain)
           return {
             success: false,
             error: `Cadena hash inválida en [${record.id}].`,
             corruptedId: record.id,
           };
-        }
         prev = record.chainHash;
       }
       return { success: true };
     },
 
-    /** Registra una pieza de memoria con hash de contenido y encadenado. */
-    add(input: {
+    async add(input: {
       tenantId: string;
       content: string;
       source: MemorySource;
@@ -135,54 +150,54 @@ export function createMemoryRepository(storePath: string = STORE_PATH) {
       ownerId?: string;
       expiresAt?: string;
       provenance?: readonly string[];
-    }): { success: true; record: MemoryRecord } | { success: false; error: string } {
-      if (!input.content || input.content.length === 0) {
+    }): Promise<{ success: true; record: MemoryRecord } | { success: false; error: string }> {
+      if (!input.content || input.content.length === 0)
         return { success: false, error: "Contenido de memoria vacío." };
-      }
-      if (input.consentRequired && !input.consentGranted) {
-        return { success: false, error: "Consentimiento requerido no otorgado." };
-      }
-      if (input.sensitivity === "personal" || input.sensitivity === "restricted") {
-        if (!input.ownerId) {
-          return { success: false, error: "Dato sensible requiere propietario." };
-        }
-      }
+      if (input.consentRequired && !input.consentGranted)
+        return {
+          success: false,
+          error: "Consentimiento requerido no otorgado.",
+        };
+      if (
+        (input.sensitivity === "personal" || input.sensitivity === "restricted") &&
+        !input.ownerId
+      )
+        return { success: false, error: "Dato sensible requiere propietario." };
 
-      const store = loadStore();
-      const id = `mem_${crypto.randomUUID()}`;
-      const createdAt = new Date().toISOString();
-      const contentHash = sha256(
-        `${id}|${input.tenantId}|${input.content}|${input.source}|${input.scope}|${input.sensitivity}`,
-      );
-      const previousChainHash = lastChainHash(store.records);
-      const chainHash = sha256(`${previousChainHash}|${contentHash}`);
-
-      const record: MemoryRecord = {
-        id,
-        tenantId: input.tenantId,
-        content: input.content,
-        source: input.source,
-        scope: input.scope,
-        sensitivity: input.sensitivity,
-        purpose: input.purpose,
-        consentRequired: input.consentRequired,
-        consentGranted: input.consentGranted,
-        createdAt,
-        deletable: true,
-        provenance: input.provenance ?? [],
-        contentHash,
-        chainHash,
-        previousChainHash,
-        ...(input.ownerId ? { ownerId: input.ownerId } : {}),
-        ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
-      };
-
-      store.records.push(record);
-      saveStore(store);
-      return { success: true, record };
+      return withStoreLock(storePath, () => {
+        const store = loadStore();
+        const id = `mem_${crypto.randomUUID()}`;
+        const createdAt = new Date().toISOString();
+        const contentHash = sha256(
+          `${id}|${input.tenantId}|${input.content}|${input.source}|${input.scope}|${input.sensitivity}`,
+        );
+        const previousChainHash = lastChainHash(store.records);
+        const chainHash = sha256(`${previousChainHash}|${contentHash}`);
+        const record: MemoryRecord = {
+          id,
+          tenantId: input.tenantId,
+          content: input.content,
+          source: input.source,
+          scope: input.scope,
+          sensitivity: input.sensitivity,
+          purpose: input.purpose,
+          consentRequired: input.consentRequired,
+          consentGranted: input.consentGranted,
+          createdAt,
+          deletable: true,
+          provenance: input.provenance ?? [],
+          contentHash,
+          chainHash,
+          previousChainHash,
+          ...(input.ownerId ? { ownerId: input.ownerId } : {}),
+          ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+        };
+        store.records.push(record);
+        saveStore(store);
+        return { success: true, record };
+      });
     },
 
-    /** Recupera registros activos (no caducados) de un tenant. */
     list(tenantId: string, scope?: MemoryScope): MemoryRecord[] {
       const now = Date.now();
       return loadStore().records.filter((r) => {
@@ -193,14 +208,12 @@ export function createMemoryRepository(storePath: string = STORE_PATH) {
       });
     },
 
-    /** Purga registros caducados o marcados como borrables (retención mínima). */
     prune(now: number = Date.now()): { removed: number } {
       const store = loadStore();
       const before = store.records.length;
-      store.records = store.records.filter((r) => {
-        if (r.deletable && r.expiresAt && new Date(r.expiresAt).getTime() < now) return false;
-        return true;
-      });
+      store.records = store.records.filter(
+        (r) => !(r.deletable && r.expiresAt && new Date(r.expiresAt).getTime() < now),
+      );
       saveStore(store);
       return { removed: before - store.records.length };
     },
@@ -208,6 +221,4 @@ export function createMemoryRepository(storePath: string = STORE_PATH) {
 }
 
 export type MemoryRepository = ReturnType<typeof createMemoryRepository>;
-export const MEMORY_REPOSITORY = {
-  create: createMemoryRepository,
-};
+export const MEMORY_REPOSITORY = { create: createMemoryRepository };

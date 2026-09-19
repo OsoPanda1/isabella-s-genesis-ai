@@ -39,7 +39,11 @@ function buildState(): SupabaseState {
     const client = createClient(url, anonKey, {
       auth: { persistSession: true, autoRefreshToken: true },
     });
-    return { client, configured: true, reason: "Cliente Supabase configurado." };
+    return {
+      client,
+      configured: true,
+      reason: "Cliente Supabase configurado.",
+    };
   } catch (error) {
     return {
       client: null,
@@ -64,7 +68,10 @@ export function supabaseState(): SupabaseState {
   return cachedClient;
 }
 
-export async function testSupabaseConnection(): Promise<{ success: boolean; message: string }> {
+export async function testSupabaseConnection(): Promise<{
+  success: boolean;
+  message: string;
+}> {
   const state = supabaseState();
   if (!state.configured) {
     return { success: false, message: state.reason };
@@ -77,7 +84,10 @@ export async function testSupabaseConnection(): Promise<{ success: boolean; mess
   try {
     const { error } = await client.from("tenants").select("count");
     if (error) {
-      return { success: false, message: `Error en la base de datos: ${error.message}` };
+      return {
+        success: false,
+        message: `Error en la base de datos: ${error.message}`,
+      };
     }
     return { success: true, message: "Conexión exitosa con Supabase." };
   } catch (err: unknown) {

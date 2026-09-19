@@ -355,7 +355,11 @@ class AegisFirewallService {
         "LATAM_AEGIS",
         "AEGIS_FIREWALL",
         semantic.verdict === "deny" ? "SemanticBlock" : "SemanticFlag",
-        { score: semantic.score, signals: topSignals, findings: semantic.findings.length },
+        {
+          score: semantic.score,
+          signals: topSignals,
+          findings: semantic.findings.length,
+        },
         semantic.verdict === "deny" ? "security_incident" : "warn",
         currentTrace,
         currentCorr,

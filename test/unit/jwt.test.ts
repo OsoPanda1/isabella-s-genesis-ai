@@ -45,7 +45,11 @@ describe("JWT verifier (HS256) — verificación criptográfica", () => {
 
   it("rechaza un token expirado", () => {
     const token = signJwtHs256(buildClaims({ exp: Math.floor(Date.now() / 1000) - 100 }), SECRET);
-    const result = verifyJwt(token, { key: SECRET, algorithm: "HS256", issuer: ISSUER });
+    const result = verifyJwt(token, {
+      key: SECRET,
+      algorithm: "HS256",
+      issuer: ISSUER,
+    });
     expect(result.ok).toBe(false);
   });
 

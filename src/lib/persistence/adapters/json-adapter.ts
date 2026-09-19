@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { config } from "../../config";
 import type {
   IRepository,
   AuditEntry,
@@ -20,11 +21,21 @@ const FILES: Record<string, string> = {
 };
 
 function assertJsonAllowed(): void {
-  const isProd =
-    process.env.NODE_ENV === "production" ||
-    process.env.ISABELLA_RUNTIME_MODE === "production" ||
-    process.env.ISABELLA_RUNTIME_MODE === "staging";
-  const allowed = process.env.DURABLE_JSON_ALLOWED === "true";
+  // Contrato canónico vía config() (§12). Si la configuración no carga,
+  // fail-closed: JSON prohibido (nunca asumir entorno no productivo).
+  let isProd = true;
+  let allowed = false;
+  try {
+    const cfg = config();
+    isProd =
+      cfg.NODE_ENV === "production" ||
+      cfg.ISABELLA_RUNTIME_MODE === "production" ||
+      cfg.ISABELLA_RUNTIME_MODE === "staging";
+    allowed = cfg.DURABLE_JSON_ALLOWED === true;
+  } catch {
+    isProd = true;
+    allowed = false;
+  }
   if (isProd && !allowed) {
     throw Object.assign(
       new Error("[FATAL] JSON persistence forbidden in production — DURABLE_JSON_ALLOWED=false"),

@@ -1,29 +1,33 @@
-import { useEffect, useRef, useState, useId, useCallback } from "react";
-import { Waveform } from "./Waveform";
-import { fileToDataUrl, humanSize, MAX_ATTACHMENT_BYTES, type Attachment } from "@/lib/attachments";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
-  Paperclip,
+  AlertTriangle,
+  BrainCircuit,
+  Globe,
   Mic,
   MicOff,
-  Square,
+  Paperclip,
   Send,
+  Settings2,
+  Square,
   Trash2,
-  BrainCircuit,
   Wrench,
-  Globe,
-  AlertTriangle,
 } from "lucide-react";
+import { Waveform } from "./Waveform";
+import { fileToDataUrl, humanSize, MAX_ATTACHMENT_BYTES, type Attachment } from "@/lib/attachments";
 import { usePerformanceMonitor } from "@/hooks/usePerformanceMonitor";
-
-const uid = () => Math.random().toString(36).slice(2, 11);
-
-// Modos de Razonamiento inspirados en DeepSeek & Perplexity
+const uid = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 11);
+const THEME_KEY = "isabella.cognitive-theme.v1";
+const themes = {
+  abyss: { label: "Abyss", accent: "electric" },
+  arctic: { label: "Arctic", accent: "cyan" },
+  aurora: { label: "Aurora", accent: "violet" },
+  ember: { label: "Ember", accent: "amber" },
+} as const;
+type ThemeId = keyof typeof themes;
 export type ExecutionMode = "fast" | "deep_reasoning" | "web_research" | "agent_tools";
-
 export interface ExtendedAttachment extends Attachment {
   tokenEstimate?: number;
 }
-
 export interface CommandLineProps {
   onSend: (
     value: string,
@@ -34,7 +38,59 @@ export interface CommandLineProps {
   onReset: () => void;
   isProcessing: boolean;
 }
-
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  onresult:
+    | ((event: {
+        resultIndex: number;
+        results: ArrayLike<ArrayLike<{ transcript: string; isFinal: boolean }>>;
+      }) => void)
+    | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+};
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  }
+}
+function applyTheme(theme: ThemeId) {
+  document.documentElement.dataset.cognitiveTheme = theme;
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    /* persistence unavailable */
+  }
+}
+function readTheme(): ThemeId {
+  try {
+    const stored = localStorage.getItem(THEME_KEY) as ThemeId | null;
+    return stored && stored in themes ? stored : "abyss";
+  } catch {
+    return "abyss";
+  }
+}
+function sentimentFromText(text: string): { label: string; glyph: string } {
+  const normalized = text.toLocaleLowerCase("es-MX");
+  if (!normalized.trim()) return { label: "EN ESPERA", glyph: "·" };
+  const risk =
+    /\b(error|fallo|riesgo|amenaza|bloquead|peligro|crítico|critico|rechaz|violencia)\b/.test(
+      normalized,
+    );
+  const positive =
+    /\b(listo|correcto|éxito|exito|estable|seguro|avance|resuelto|gracias|excelente)\b/.test(
+      normalized,
+    );
+  if (risk) return { label: "ALERTA", glyph: "!" };
+  if (positive) return { label: "ESTABLE", glyph: "+" };
+  return { label: "ANALIZANDO", glyph: "~" };
+}
 export function CommandLine({ onSend, onStop, onReset, isProcessing }: CommandLineProps) {
   const { startTrack } = usePerformanceMonitor("CommandLine");
   const [value, setValue] = useState("");
@@ -42,88 +98,99 @@ export function CommandLine({ onSend, onStop, onReset, isProcessing }: CommandLi
   const [recording, setRecording] = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
-
-  // Estados avanzados de configuración IA
+  const [theme, setTheme] = useState<ThemeId>("abyss");
+  const [showSettings, setShowSettings] = useState(false);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>("fast");
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [toolsEnabled, setToolsEnabled] = useState(true);
   const [showCommandsMenu, setShowCommandsMenu] = useState(false);
-
+  const [cognitiveText, setCognitiveText] = useState("");
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const photoRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const inputId = useId();
-
-  // Estimación rápida de tokens en tiempo real (Inspirado en Kimi & Prometheus)
-  const estimatedTokens =
-    Math.ceil(value.length / 4) +
-    attachments.reduce((acc, curr) => acc + (curr.kind === "image" ? 256 : 512), 0);
-
-  // Auto-ajuste de altura de textarea
+  useEffect(() => {
+    const initial = readTheme();
+    setTheme(initial);
+    applyTheme(initial);
+    const onStream = (event: Event) => {
+      const custom = event as CustomEvent<{ text?: string }>;
+      if (typeof custom.detail?.text === "string")
+        setCognitiveText(custom.detail.text.slice(-5000));
+    };
+    window.addEventListener("isabella:cognitive-stream", onStream);
+    return () => window.removeEventListener("isabella:cognitive-stream", onStream);
+  }, []);
+  useEffect(() => {
+    const updateFromStream = () => {
+      const nodes = Array.from(document.querySelectorAll<HTMLElement>("[aria-live='polite']"));
+      const latest = nodes.at(-1)?.textContent?.trim();
+      if (latest) setCognitiveText(latest.slice(-5000));
+    };
+    updateFromStream();
+    const observer = new MutationObserver(updateFromStream);
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "0px";
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   }, [value]);
-
-  // Cronómetro de grabación
   useEffect(() => {
     if (!recording) return;
-    const t = window.setInterval(() => setRecSeconds((s) => s + 1), 1000);
-    return () => window.clearInterval(t);
+    const timer = window.setInterval(() => setRecSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
   }, [recording]);
-
-  // Atajos de teclado (<kbd>Esc</kbd> para detener, `/` para comandos)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isProcessing) {
-        onStop();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [isProcessing, onStop]);
-
-  // Detector de menú flotante de comandos
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    setValue(val);
-    if (val.startsWith("/")) {
-      setShowCommandsMenu(true);
-    } else {
-      setShowCommandsMenu(false);
-    }
-  };
-
   const submit = useCallback(() => {
     const text = value.trim();
     if ((!text && attachments.length === 0) || isProcessing) return;
-
     const stopTrack = startTrack(`Transmit Prompt (${executionMode})`);
-
-    onSend(text, attachments, {
-      mode: executionMode,
-      webSearch: webSearchEnabled,
-      toolsEnabled: toolsEnabled,
-    });
-
+    onSend(text, attachments, { mode: executionMode, webSearch: webSearchEnabled, toolsEnabled });
     setValue("");
     setAttachments([]);
     setShowCommandsMenu(false);
     stopTrack();
   }, [
-    value,
     attachments,
+    executionMode,
     isProcessing,
     onSend,
-    executionMode,
-    webSearchEnabled,
-    toolsEnabled,
     startTrack,
+    toolsEnabled,
+    value,
+    webSearchEnabled,
   ]);
-
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const modifier = event.metaKey || event.ctrlKey;
+      if (modifier && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        ref.current?.focus();
+      }
+      if (modifier && event.key === "Enter") {
+        event.preventDefault();
+        submit();
+      }
+      if (event.key === "Escape") {
+        if (showSettings) {
+          setShowSettings(false);
+          return;
+        }
+        if (isProcessing) onStop();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isProcessing, onStop, showSettings, submit]);
+  const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const next = event.target.value;
+    setValue(next);
+    setShowCommandsMenu(next.startsWith("/"));
+  };
   const addPhotos = async (files: FileList | null) => {
     if (!files) return;
     const next: ExtendedAttachment[] = [];
@@ -144,36 +211,83 @@ export function CommandLine({ onSend, onStop, onReset, isProcessing }: CommandLi
     }
     if (next.length) setAttachments((prev) => [...prev, ...next].slice(0, 8));
   };
-
-  const startRecording = async () => {
+  const startVoiceToText = () => {
+    setNotice(null);
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setNotice("Este navegador no expone acceso al micrófono.");
+      return;
+    }
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Recognition) {
+      void startAudioNote();
+      return;
+    }
+    try {
+      const recognition = new Recognition();
+      recognition.lang = "es-MX";
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      let finalText = value;
+      recognition.onresult = (event) => {
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const result = event.results[i];
+          const transcript = result?.[0]?.transcript ?? "";
+          if (result?.[0]?.isFinal) finalText = `${finalText} ${transcript}`.trim();
+          else interim += transcript;
+        }
+        setValue(`${finalText}${interim ? ` ${interim}` : ""}`.trim());
+      };
+      recognition.onerror = (event) =>
+        setNotice(
+          event.error === "not-allowed"
+            ? "Permiso de micrófono denegado."
+            : "No fue posible transcribir la voz.",
+        );
+      recognition.onend = () => {
+        setRecording(false);
+        recognitionRef.current = null;
+      };
+      recognitionRef.current = recognition;
+      setRecording(true);
+      recognition.start();
+    } catch {
+      setRecording(false);
+      setNotice("No fue posible iniciar la transcripción de voz.");
+    }
+  };
+  const stopVoiceToText = () => {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setRecording(false);
+  };
+  const startAudioNote = async () => {
     setNotice(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
-      recorder.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) chunksRef.current.push(event.data);
+      };
       recorder.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
+        stream.getTracks().forEach((track) => track.stop());
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
         if (blob.size > MAX_ATTACHMENT_BYTES) {
           setNotice("La grabación excede el límite de 8 MB.");
           return;
         }
         const dataUrl = await fileToDataUrl(blob);
-        setAttachments((prev) =>
-          [
-            ...prev,
-            {
-              id: uid(),
-              kind: "audio" as const,
-              dataUrl,
-              mime: recorder.mimeType || "audio/webm",
-              name: `nota-voz-${new Date().toISOString().slice(11, 19)}`,
-              size: blob.size,
-              tokenEstimate: 512,
-            },
-          ].slice(0, 8),
-        );
+        const item: ExtendedAttachment = {
+          id: uid(),
+          kind: "audio",
+          dataUrl,
+          mime: recorder.mimeType || "audio/webm",
+          name: `nota-voz-${new Date().toISOString().slice(11, 19)}`,
+          size: blob.size,
+          tokenEstimate: 512,
+        };
+        setAttachments((prev) => [...prev, item].slice(0, 8));
       };
       recorder.start();
       recorderRef.current = recorder;
@@ -183,180 +297,185 @@ export function CommandLine({ onSend, onStop, onReset, isProcessing }: CommandLi
       setNotice("No se pudo acceder al micrófono. Revisa los permisos.");
     }
   };
-
-  const stopRecording = () => {
+  const stopAudioNote = () => {
     recorderRef.current?.stop();
     recorderRef.current = null;
     setRecording(false);
   };
-
-  const removeAttachment = (id: string) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
-  };
-
-  const applyCommand = (cmd: string, mode: ExecutionMode) => {
-    setValue("");
-    setExecutionMode(mode);
-    setShowCommandsMenu(false);
-  };
-
+  const sentiment = sentimentFromText(cognitiveText);
+  const estimatedTokens =
+    Math.ceil(value.length / 4) +
+    attachments.reduce((sum, item) => sum + (item.kind === "image" ? 256 : 512), 0);
   return (
-    <div className="glass-strong rounded-3xl p-4 sm:p-6 border border-border/40 shadow-glass relative flex flex-col gap-3 transition-all">
-      {/* Menú Flotante de Comandos Rápidos (/slash) */}
+    <div className="glass-strong relative flex flex-col gap-3 rounded-3xl border border-border/40 p-4 shadow-glass transition-all sm:p-6">
       {showCommandsMenu && (
-        <div className="absolute bottom-full mb-2 left-6 right-6 bg-background/95 backdrop-blur-xl border border-border/50 rounded-2xl p-2 shadow-2xl z-50 animate-fade-in font-mono text-[11px] space-y-1">
-          <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground font-semibold">
+        <div className="absolute bottom-full left-6 right-6 z-50 mb-2 space-y-1 rounded-2xl border border-border/50 bg-background/95 p-2 font-mono text-[11px] shadow-2xl backdrop-blur-xl">
+          <div className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
             Modos de ejecución rápida
           </div>
-          <button
-            onClick={() => applyCommand("/think", "deep_reasoning")}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-secondary/40 text-platinum transition-colors text-left"
-          >
-            <BrainCircuit className="size-4 text-purple-400" />
-            <div>
-              <span className="font-semibold text-purple-300">/think</span>
-              <span className="text-muted-foreground ml-2">
-                Razonamiento Profundo CoT (Estilo DeepSeek-R1 / o1)
-              </span>
-            </div>
-          </button>
-          <button
-            onClick={() => applyCommand("/research", "web_research")}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-secondary/40 text-platinum transition-colors text-left"
-          >
-            <Globe className="size-4 text-teal-400" />
-            <div>
-              <span className="font-semibold text-teal-300">/research</span>
-              <span className="text-muted-foreground ml-2">
-                Búsqueda y Síntesis Web Extensa (Perplexity)
-              </span>
-            </div>
-          </button>
-          <button
-            onClick={() => applyCommand("/agent", "agent_tools")}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-secondary/40 text-platinum transition-colors text-left"
-          >
-            <Wrench className="size-4 text-amber-400" />
-            <div>
-              <span className="font-semibold text-amber-300">/agent</span>
-              <span className="text-muted-foreground ml-2">
-                Ejecución de Herramientas & Sandbox (Hermes/Gemini)
-              </span>
-            </div>
-          </button>
+          {(
+            [
+              ["/think", "deep_reasoning", BrainCircuit, "Razonamiento profundo"],
+              ["/research", "web_research", Globe, "Investigación web"],
+              ["/agent", "agent_tools", Wrench, "Herramientas y agentes"],
+            ] as const
+          ).map(([command, mode, Icon, label]) => (
+            <button
+              key={command}
+              type="button"
+              onClick={() => {
+                setValue("");
+                setExecutionMode(mode);
+                setShowCommandsMenu(false);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-platinum transition-colors hover:bg-secondary/40"
+            >
+              <Icon className="size-4 text-electric" />
+              <span className="font-semibold">{command}</span>
+              <span className="text-muted-foreground">{label}</span>
+            </button>
+          ))}
         </div>
       )}
-
-      {/* Encabezado Superior con Indicador de Estado y Tokenómetro */}
+      {showSettings && (
+        <div
+          className="absolute right-4 top-14 z-50 w-72 rounded-2xl border border-border/50 bg-background/95 p-4 font-mono text-[10px] shadow-2xl backdrop-blur-xl"
+          role="dialog"
+          aria-label="Preferencias cognitivas"
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <span className="font-semibold uppercase tracking-[.2em] text-platinum">
+              Preferencias cognitivas
+            </span>
+            <span className="text-muted-foreground">Persistente</span>
+          </div>
+          <p className="mb-3 text-muted-foreground">
+            Paleta visual local. Se conserva en este navegador y sobrescribe Abyss.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {(Object.keys(themes) as ThemeId[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={theme === id}
+                onClick={() => {
+                  setTheme(id);
+                  applyTheme(id);
+                }}
+                className={`rounded-xl border px-3 py-2 text-left transition-all ${theme === id ? "border-electric/60 bg-electric/10 text-electric" : "border-border/30 text-muted-foreground hover:bg-secondary/30"}`}
+              >
+                <span className="block font-semibold">{themes[id].label}</span>
+                <span className="text-[8px] uppercase tracking-wider">{themes[id].accent}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between border-b border-border/30 pb-2">
         <div className="flex items-center gap-2">
           <span
-            className={`size-2 rounded-full ${
-              isProcessing
-                ? "bg-electric animate-ping"
-                : recording
-                  ? "bg-rose-500 animate-pulse"
-                  : "bg-emerald-400"
-            }`}
+            className={`size-2 rounded-full ${isProcessing ? "animate-ping bg-electric" : recording ? "animate-pulse bg-rose-500" : "bg-emerald-400"}`}
           />
-          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+          <span
+            className="font-mono text-[10px] uppercase tracking-[.22em] text-muted-foreground"
+            aria-live="polite"
+          >
             Canal Perceptivo · Isabella AI
           </span>
         </div>
-
-        <div className="flex items-center gap-3 font-mono text-[10px]">
-          <span className="text-muted-foreground/80 hidden sm:inline">
-            Tokens est.: <strong className="text-electric">{estimatedTokens}</strong>
-          </span>
+        <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider">
           <span
-            className={`px-2 py-0.5 rounded-full border tracking-wider uppercase font-semibold ${
-              isProcessing
-                ? "bg-electric/15 border-electric/30 text-electric"
-                : recording
-                  ? "bg-rose-500/15 border-rose-500/30 text-rose-400"
-                  : "bg-secondary/40 border-border/30 text-muted-foreground"
-            }`}
+            className="rounded-full border border-border/30 px-2 py-0.5 text-muted-foreground"
+            title="Indicador heurístico de estado cognitivo"
           >
-            {isProcessing ? "SINTETIZANDO" : recording ? "GRABANDO" : "EN ESCUCHA"}
+            <span aria-hidden>{sentiment.glyph}</span> {sentiment.label}
           </span>
+          <span className="hidden text-muted-foreground/80 sm:inline">
+            Tokens: <strong className="text-electric">{estimatedTokens}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowSettings((open) => !open)}
+            aria-expanded={showSettings}
+            aria-label="Abrir preferencias cognitivas"
+            className="rounded-lg border border-border/30 p-1.5 text-muted-foreground hover:bg-secondary/30 hover:text-platinum"
+          >
+            <Settings2 className="size-3.5" />
+          </button>
         </div>
       </div>
-
-      {/* Visualizador de Onda Dinámico */}
       <Waveform active={isProcessing || recording} height={36} />
-
-      {/* Campo de Texto Multimodal */}
       <div className="relative">
         <textarea
           id={inputId}
           ref={ref}
           value={value}
           onChange={handleInputChange}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing &&
+              event.keyCode !== 229
+            ) {
+              event.preventDefault();
               submit();
             }
           }}
           rows={1}
           aria-label="Mensaje para Isabella AI"
-          placeholder="Habla con Isabella... ('/' para comandos · Enter para enviar · Shift+Enter para salto de línea)"
+          placeholder="Habla con Isabella… · ⌘/Ctrl+K enfoca · ⌘/Ctrl+Enter envía · Shift+Enter salto"
           className="w-full resize-none bg-transparent text-[14.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60 focus:ring-0"
         />
       </div>
-
-      {/* Galería de Adjuntos Multimodales */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 pt-1">
-          {attachments.map((a) => (
+          {attachments.map((item) => (
             <div
-              key={a.id}
-              className="glass relative flex items-center gap-2.5 rounded-2xl px-3 py-2 border border-border/40 bg-secondary/20"
+              key={item.id}
+              className="glass relative flex items-center gap-2.5 rounded-2xl border border-border/40 bg-secondary/20 px-3 py-2"
             >
-              {a.kind === "image" ? (
+              {item.kind === "image" ? (
                 <img
-                  src={a.dataUrl}
-                  alt={`Adjunto ${a.name}`}
-                  className="size-10 rounded-xl object-cover border border-border/30"
+                  src={item.dataUrl}
+                  alt={`Adjunto ${item.name}`}
+                  className="size-10 rounded-xl border border-border/30 object-cover"
                 />
               ) : (
-                <audio controls src={a.dataUrl} className="h-8 max-w-[160px]" />
+                <audio controls src={item.dataUrl} className="h-8 max-w-[160px]" />
               )}
               <div className="max-w-[130px]">
-                <p className="truncate font-mono text-[10px] text-platinum font-semibold">
-                  {a.name}
+                <p className="truncate font-mono text-[10px] font-semibold text-platinum">
+                  {item.name}
                 </p>
                 <p className="font-mono text-[8.5px] text-muted-foreground">
-                  {a.kind === "image" ? "IMAGEN" : "AUDIO"} · {humanSize(a.size)}
+                  {item.kind === "image" ? "IMAGEN" : "AUDIO"} · {humanSize(item.size)}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => removeAttachment(a.id)}
-                aria-label={`Quitar adjunto ${a.name}`}
-                className="ml-1 p-1 rounded-lg border border-border/30 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                onClick={() =>
+                  setAttachments((prev) => prev.filter((attachment) => attachment.id !== item.id))
+                }
+                aria-label={`Quitar adjunto ${item.name}`}
+                className="ml-1 rounded-lg border border-border/30 p-1 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-400"
               >
-                ✕
+                ×
               </button>
             </div>
           ))}
         </div>
       )}
-
-      {/* Alertas y Notificaciones */}
       {notice && (
         <div
           role="status"
-          className="flex items-center gap-2 font-mono text-[10.5px] text-rose-400 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20"
+          className="flex items-center gap-2 rounded-xl border border-rose-500/20 bg-rose-500/10 p-2.5 font-mono text-[10.5px] text-rose-400"
         >
           <AlertTriangle className="size-3.5 shrink-0" />
-          <span>{notice}</span>
+          {notice}
         </div>
       )}
-
-      {/* Barra de Herramientas e Interruptores de Inteligencia */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/30 pt-3 mt-1">
-        {/* Controles de Modo IA */}
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-3 border-t border-border/30 pt-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <input
             ref={photoRef}
@@ -364,111 +483,74 @@ export function CommandLine({ onSend, onStop, onReset, isProcessing }: CommandLi
             accept="image/*"
             multiple
             className="sr-only"
-            onChange={(e) => {
-              void addPhotos(e.target.files);
-              e.target.value = "";
+            onChange={(event) => {
+              void addPhotos(event.target.files);
+              event.target.value = "";
             }}
           />
-
           <button
             type="button"
             onClick={() => photoRef.current?.click()}
-            className="p-2 rounded-xl border border-border/30 text-muted-foreground hover:text-platinum hover:bg-secondary/30 font-mono text-[10px] flex items-center gap-1.5 transition-all"
-            title="Adjuntar imágenes"
+            className="flex items-center gap-1.5 rounded-xl border border-border/30 p-2 font-mono text-[10px] text-muted-foreground transition-all hover:bg-secondary/30 hover:text-platinum"
           >
             <Paperclip className="size-3.5 text-electric" />
             <span className="hidden sm:inline">Foto</span>
           </button>
-
-          <button
-            type="button"
-            onClick={() => (recording ? stopRecording() : void startRecording())}
-            className={`p-2 rounded-xl border font-mono text-[10px] flex items-center gap-1.5 transition-all ${
-              recording
-                ? "border-rose-500/50 bg-rose-500/15 text-rose-400"
-                : "border-border/30 text-muted-foreground hover:text-platinum hover:bg-secondary/30"
-            }`}
-          >
-            {recording ? (
-              <MicOff className="size-3.5 text-rose-400 animate-pulse" />
-            ) : (
-              <Mic className="size-3.5 text-emerald-400" />
-            )}
-            <span>
-              {recording
-                ? `${String(Math.floor(recSeconds / 60)).padStart(2, "0")}:${String(recSeconds % 60).padStart(2, "0")}`
-                : "Audio"}
-            </span>
-          </button>
-
-          <div className="h-4 w-px bg-border/40 mx-1 hidden sm:block" />
-
-          {/* Interruptor Razonamiento CoT (DeepSeek/o1) */}
           <button
             type="button"
             onClick={() =>
-              setExecutionMode((m) => (m === "deep_reasoning" ? "fast" : "deep_reasoning"))
+              recording
+                ? recognitionRef.current
+                  ? stopVoiceToText()
+                  : stopAudioNote()
+                : startVoiceToText()
             }
-            className={`px-2.5 py-1.5 rounded-xl border font-mono text-[10px] flex items-center gap-1.5 transition-all ${
-              executionMode === "deep_reasoning"
-                ? "bg-purple-500/20 border-purple-500/40 text-purple-300 font-semibold"
-                : "border-border/30 text-muted-foreground hover:text-platinum"
-            }`}
-            title="Modo Pensamiento Profundo"
+            aria-pressed={recording}
+            title="Dictado por voz en español mexicano"
+            className={`flex items-center gap-1.5 rounded-xl border p-2 font-mono text-[10px] transition-all ${recording ? "border-rose-500/50 bg-rose-500/15 text-rose-400" : "border-border/30 text-muted-foreground hover:bg-secondary/30 hover:text-platinum"}`}
           >
-            <BrainCircuit className="size-3.5 text-purple-400" />
-            <span className="hidden md:inline">CoT</span>
+            {recording ? (
+              <MicOff className="size-3.5" />
+            ) : (
+              <Mic className="size-3.5 text-electric" />
+            )}
+            <span className="hidden sm:inline">{recording ? "Detener" : "Dictar"}</span>
+            {recording && <span>{recSeconds}s</span>}
           </button>
-
-          {/* Interruptor Búsqueda Web (Perplexity) */}
           <button
             type="button"
-            onClick={() => setWebSearchEnabled((v) => !v)}
-            className={`px-2.5 py-1.5 rounded-xl border font-mono text-[10px] flex items-center gap-1.5 transition-all ${
-              webSearchEnabled
-                ? "bg-teal-500/20 border-teal-500/40 text-teal-300 font-semibold"
-                : "border-border/30 text-muted-foreground opacity-50"
-            }`}
-            title="Búsqueda Web Activa"
+            onClick={() => {
+              setExecutionMode("fast");
+              setWebSearchEnabled((enabled) => !enabled);
+            }}
+            className={`rounded-xl border px-2 py-2 font-mono text-[9px] ${webSearchEnabled ? "border-electric/30 text-electric" : "border-border/30 text-muted-foreground"}`}
           >
-            <Globe className="size-3.5 text-teal-400" />
-            <span className="hidden md:inline">Web</span>
+            Web
           </button>
-
-          {/* Interruptor Herramientas & Agentic Tools (Hermes/Gemini) */}
           <button
             type="button"
-            onClick={() => setToolsEnabled((v) => !v)}
-            className={`px-2.5 py-1.5 rounded-xl border font-mono text-[10px] flex items-center gap-1.5 transition-all ${
-              toolsEnabled
-                ? "bg-amber-500/20 border-amber-500/40 text-amber-300 font-semibold"
-                : "border-border/30 text-muted-foreground opacity-50"
-            }`}
-            title="Herramientas del Sistema"
+            onClick={() => setToolsEnabled((enabled) => !enabled)}
+            className={`rounded-xl border px-2 py-2 font-mono text-[9px] ${toolsEnabled ? "border-electric/30 text-electric" : "border-border/30 text-muted-foreground"}`}
           >
-            <Wrench className="size-3.5 text-amber-400" />
-            <span className="hidden md:inline">Tools</span>
+            Tools
           </button>
         </div>
-
-        {/* Acciones Principales: Purgar / Detener / Transmitir */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={onReset}
-            className="p-2 rounded-xl border border-border/30 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 font-mono text-[10px] transition-all"
-            title="Purgar memoria inmediata"
+            aria-label="Restablecer conversación"
+            className="rounded-xl border border-border/30 p-2 text-muted-foreground hover:bg-secondary/30 hover:text-rose-400"
           >
             <Trash2 className="size-3.5" />
           </button>
-
           {isProcessing ? (
             <button
               type="button"
               onClick={onStop}
-              className="px-4 py-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-400 font-mono text-[11px] uppercase tracking-wider flex items-center gap-1.5 hover:bg-rose-500/30 transition-all"
+              className="flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-rose-400"
             >
-              <Square className="size-3.5 fill-rose-400" />
+              <Square className="size-3 fill-current" />
               Detener
             </button>
           ) : (
@@ -476,13 +558,19 @@ export function CommandLine({ onSend, onStop, onReset, isProcessing }: CommandLi
               type="button"
               onClick={submit}
               disabled={!value.trim() && attachments.length === 0}
-              className="glow-ring px-5 py-2 rounded-xl bg-electric/25 hover:bg-electric/35 border border-electric/40 text-electric font-mono text-[11px] uppercase tracking-[0.2em] font-semibold flex items-center gap-2 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_12px_rgba(110,234,255,0.15)] active:scale-95"
+              className="flex items-center gap-2 rounded-xl border border-electric/40 bg-electric/10 px-4 py-2 font-mono text-[10px] uppercase tracking-wider text-electric disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <span>Transmitir</span>
-              <Send className="size-3.5" />
+              <Send className="size-3" />
+              Enviar
             </button>
           )}
         </div>
+      </div>
+      <div className="flex justify-between font-mono text-[8px] uppercase tracking-[.18em] text-muted-foreground/45">
+        <span>ES-MX · es-419</span>
+        <span>
+          Theme: {themes[theme].label} · {executionMode}
+        </span>
       </div>
     </div>
   );

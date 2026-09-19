@@ -110,7 +110,12 @@ export function evaluateWithdrawalRisk(input: WithdrawalRiskInput): RiskEvaluati
   const score = Math.round((1 - complement) * 1000) / 1000;
 
   const status: FraudStatus = score >= 0.8 ? "fraud_detected" : score >= 0.4 ? "hold" : "pass";
-  return { reviewId: `fr_${randomUUID().replace(/-/g, "")}`, status, score, signals };
+  return {
+    reviewId: `fr_${randomUUID().replace(/-/g, "")}`,
+    status,
+    score,
+    signals,
+  };
 }
 
 export function createFraudReviewQueue(opts?: {
@@ -120,12 +125,14 @@ export function createFraudReviewQueue(opts?: {
 }) {
   const cases = opts?.cases ?? new Map<string, FraudCase>();
   const disputes = opts?.disputes ?? new Map<string, Dispute>();
+  // providerEventId index, so duplicate webhook events resolve in O(1).
+  const disputeEventIndex = new Map<string, string>();
   const audit = opts?.audit;
 
   return {
     /** Abre un caso desde una evaluación de riesgo. */
     open(evaluation: RiskEvaluation, userId: string, amountCents: number): FraudCase {
-      const existing = [...cases.values()].find((c) => c.reviewId === evaluation.reviewId);
+      const existing = cases.get(evaluation.reviewId);
       if (existing) return existing;
       const fraudCase: FraudCase = {
         reviewId: evaluation.reviewId,
@@ -185,10 +192,9 @@ export function createFraudReviewQueue(opts?: {
       tenantId: string;
       amountMinor: number;
     }): Dispute {
-      const existing = [...disputes.values()].find(
-        (dispute) =>
-          dispute.provider === input.provider && dispute.providerEventId === input.providerEventId,
-      );
+      const eventKey = `${input.provider}::${input.providerEventId}`;
+      const existingId = disputeEventIndex.get(eventKey);
+      const existing = existingId ? disputes.get(existingId) : undefined;
       if (existing) return existing;
       const dispute: Dispute = {
         disputeId: `dp_${randomUUID().replace(/-/g, "")}`,
@@ -200,7 +206,11 @@ export function createFraudReviewQueue(opts?: {
         openedAt: new Date().toISOString(),
       };
       disputes.set(dispute.disputeId, dispute);
-      audit?.("payment.dispute.opened", { ...input, disputeId: dispute.disputeId });
+      disputeEventIndex.set(eventKey, dispute.disputeId);
+      audit?.("payment.dispute.opened", {
+        ...input,
+        disputeId: dispute.disputeId,
+      });
       return dispute;
     },
 
@@ -253,7 +263,10 @@ export function assertPayoutAllowed(
     return { allowed: false, reason: "Caso de fraude inexistente o ajeno." };
   }
   if (fraudCase.status !== "pass") {
-    return { allowed: false, reason: `Caso en estado '${fraudCase.status}', no aprobado.` };
+    return {
+      allowed: false,
+      reason: `Caso en estado '${fraudCase.status}', no aprobado.`,
+    };
   }
   if (fraudCase.score >= 0.4 && !fraudCase.decision) {
     return { allowed: false, reason: "Hold sin decisión humana registrada." };
@@ -268,7 +281,10 @@ export function assertPayoutAllowed(
   ];
   const needsDual = request.amountCents >= PAYOUT_DUAL_APPROVAL_CENTS;
   if (needsDual && approvers.length < 2) {
-    return { allowed: false, reason: "Monto alto exige doble aprobación de revisores distintos." };
+    return {
+      allowed: false,
+      reason: "Monto alto exige doble aprobación de revisores distintos.",
+    };
   }
   if (!needsDual && fraudCase.decision && approvers.length < 1) {
     return { allowed: false, reason: "Falta aprobador registrado." };
@@ -287,12 +303,18 @@ export function assertPayoutAllowed(
     reviewId: request.reviewId,
     idempotencyKey: request.idempotencyKey,
   });
-  return { allowed: true, reason: "Payout autorizado con controles completos." };
+  return {
+    allowed: true,
+    reason: "Payout autorizado con controles completos.",
+  };
 }
 
 export const FRAUD_REVIEW = {
   evaluate: evaluateWithdrawalRisk,
   queue: createFraudReviewQueue,
   payout: assertPayoutAllowed,
-  thresholds: { highAmount: FRAUD_HIGH_AMOUNT_CENTS, dualApproval: PAYOUT_DUAL_APPROVAL_CENTS },
+  thresholds: {
+    highAmount: FRAUD_HIGH_AMOUNT_CENTS,
+    dualApproval: PAYOUT_DUAL_APPROVAL_CENTS,
+  },
 };

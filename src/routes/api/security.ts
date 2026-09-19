@@ -1,10 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Route as ServerRoute } from "../../server-routes/api/security";
 
-const loadHandler = async (context: unknown): Promise<Response> => {
-  const module = (await import(/* @vite-ignore */ "../../server-routes/api/security")) as { Route: { options: { server: { handlers: { POST: (ctx: unknown) => Promise<Response> } } } } };
-  return module.Route.options.server.handlers.POST(context);
+// Canonical handler lives in server-routes/api/security.ts. Keep the public
+// route as a typed delegation boundary so future edits cannot silently widen
+// the endpoint to an untyped/unauthenticated handler.
+type ServerRequestContext = { request: Request };
+type ServerHandlers = {
+  POST: (context: ServerRequestContext) => Promise<Response>;
 };
 
+const server = ServerRoute.options.server;
+if (!server?.handlers) throw new Error("Ruta servidora sin handlers.");
+const handlers = server.handlers as unknown as ServerHandlers;
+
 export const Route = createFileRoute("/api/security")({
-  server: { handlers: { POST: (context) => loadHandler(context) } },
+  server: {
+    handlers: {
+      POST: ({ request }) => handlers.POST({ request }),
+    },
+  },
 });

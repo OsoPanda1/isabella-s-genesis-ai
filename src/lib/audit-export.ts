@@ -87,7 +87,11 @@ export function exportTelemetryCsv(records: TelemetryRecord[], runId: string) {
   );
 }
 
-export async function exportTelemetryPdf(records: TelemetryRecord[], runId: string, presetName: string) {
+export async function exportTelemetryPdf(
+  records: TelemetryRecord[],
+  runId: string,
+  presetName: string,
+) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();

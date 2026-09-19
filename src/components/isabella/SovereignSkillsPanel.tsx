@@ -9,7 +9,9 @@ export function SovereignSkillsPanel() {
   const [searchQuery, setSearchQuery] = useState("");
   const [testInput, setTestInput] = useState<string>(
     JSON.stringify(
-      { request: "Quiero visitar la mina de San Acosta y conocer las rutas turísticas" },
+      {
+        request: "Quiero visitar la mina de San Acosta y conocer las rutas turísticas",
+      },
       null,
       2,
     ),
@@ -66,7 +68,9 @@ export function SovereignSkillsPanel() {
         ],
       };
     } else if (id === "ARGUS") {
-      defaultInput = { metrics: { errorRate: 0.04, latencyMs: 1350, availability: 0.991 } };
+      defaultInput = {
+        metrics: { errorRate: 0.04, latencyMs: 1350, availability: 0.991 },
+      };
     } else if (id === "HERMES") {
       defaultInput = {
         subject: "Apertura del nuevo sendero interpretativo",
@@ -144,8 +148,116 @@ export function SovereignSkillsPanel() {
     } else if (id === "HELIOS") {
       defaultInput = {
         series: [
-          { metric: "Tasa de error del sistema", values: [0.01, 0.012, 0.015, 0.024, 0.032] },
+          {
+            metric: "Tasa de error del sistema",
+            values: [0.01, 0.012, 0.015, 0.024, 0.032],
+          },
         ],
+      };
+    } else if (id === "FIRECRAWL_MARKET_RESEARCH" || id === "firecrawl-market-research") {
+      defaultInput = {
+        industry: "Inteligencia Artificial y Turismo de Patrimonio",
+        depth: "comprehensive",
+        competitors: ["OpenAI", "Anthropic", "Perplexity"],
+      };
+    } else if (id === "FIRECRAWL_MONITOR" || id === "firecrawl-monitor") {
+      defaultInput = {
+        url: "https://turismo.realdelmonte.gob.mx",
+        frequency: "daily",
+      };
+    } else if (id === "CKM_BRAND" || id === "ckm:brand" || id === "ckm-brand") {
+      defaultInput = {
+        brandName: "Pueblo Mágico Real del Monte",
+        industry: "Heritage and Mining Tourism",
+      };
+    } else if (
+      id === "CKM_BANNER_DESIGN" ||
+      id === "ckm:banner-design" ||
+      id === "ckm-banner-design"
+    ) {
+      defaultInput = {
+        headline: "Descubre el Misterio Minero",
+        subline: "Cuna del paste y del fútbol en México",
+        cta: "Explorar Rutas",
+      };
+    } else if (id === "TAVILY_SEARCH" || id === "tavily-search") {
+      defaultInput = {
+        query: "historia de los mineros de cornwall en real del monte hidalgo",
+        maxResults: 5,
+      };
+    } else if (id === "CKM_SLIDES" || id === "ckm:slides" || id === "ckm-slides") {
+      defaultInput = {
+        topic: "Plan Estratégico Gemelo Digital Nodo Cero",
+        targetAudience: "Comunidad y Consejo Directivo",
+      };
+    } else if (id === "FLUTTER_ADD_WIDGET_TEST" || id === "flutter-add-widget-test") {
+      defaultInput = {
+        widgetName: "TerritorialMapCard",
+      };
+    } else if (id === "BROWSER_TESTING_WITH_DEVTOOLS" || id === "browser-testing-with-devtools") {
+      defaultInput = {
+        url: "https://isabella.realdelmonte.io/dashboard",
+      };
+    } else if (id === "FIRECRAWL_SEO_AUDIT" || id === "firecrawl-seo-audit") {
+      defaultInput = {
+        url: "https://realdelmonte.io/patrimonio",
+      };
+    } else if (id === "BAOYU_INFOGRAPHIC" || id === "baoyu-infographic") {
+      defaultInput = {
+        concept: "Ciclo de Vida de la Extracción de Plata y Vapor en Mina de Acosta",
+      };
+    } else if (id === "FIRECRAWL_KNOWLEDGE_BASE" || id === "firecrawl-knowledge-base") {
+      defaultInput = {
+        docUrl: "https://docs.isabella.ai/governance/zero-trust",
+      };
+    } else if (id === "CI_CD_AND_AUTOMATION" || id === "ci-cd-and-automation") {
+      defaultInput = {
+        projectType: "fullstack-node-react",
+        provider: "github-actions",
+      };
+    } else if (id === "FIRECRAWL_WORKFLOWS" || id === "firecrawl-workflows") {
+      defaultInput = {
+        workflowName: "TerritorialHeritageExtractionPipeline",
+      };
+    } else if (id === "BAOYU_MARKDOWN_TO_HTML" || id === "baoyu-markdown-to-html") {
+      defaultInput = {
+        markdown:
+          "# Gemelo Digital Nodo Cero\n\nIsabella coordina memoria, soberanía y territorio.",
+      };
+    } else if (id === "FIRECRAWL_DASHBOARD_REPORTING" || id === "firecrawl-dashboard-reporting") {
+      defaultInput = {
+        reportName: "Afluencia Turística y Telemetría Territorial Q3",
+      };
+    } else if (id === "SWIFTUI_EXPERT_SKILL" || id === "swiftui-expert-skill") {
+      defaultInput = {
+        viewName: "MiningHeritageViewer",
+      };
+    } else if (id === "SOURCE_DRIVEN_DEVELOPMENT" || id === "source-driven-development") {
+      defaultInput = {
+        specName: "TerritorialNodeRegistryContract",
+      };
+    } else if (id === "FIRECRAWL_LEAD_GEN" || id === "firecrawl-lead-gen") {
+      defaultInput = {
+        industrySector: "Gastronomía Artesanal y Pastes",
+        location: "Hidalgo, México",
+      };
+    } else if (id === "SHIPPING_AND_LAUNCH" || id === "shipping-and-launch") {
+      defaultInput = {
+        releaseVersion: "v4.2.0-sovereign",
+        targetEnv: "production",
+      };
+    } else if (id === "FIRECRAWL_LEAD_RESEARCH" || id === "firecrawl-lead-research") {
+      defaultInput = {
+        organization: "Consejo Regulador del Paste A.C.",
+      };
+    } else if (id === "FLUTTER_ADD_INTEGRATION_TEST" || id === "flutter-add-integration-test") {
+      defaultInput = {
+        flowName: "CitizenHeritageBookingFlow",
+      };
+    } else if (id === "FIRECRAWL_COMPETITIVE_INTEL" || id === "firecrawl-competitive-intel") {
+      defaultInput = {
+        sector: "Plataformas de Gemelos Digitales de Ciudades Históricas",
+        competitor: "Virtual Heritage Labs",
       };
     } else {
       defaultInput = { request: "Solicitud genérica de prueba" };
@@ -206,11 +318,11 @@ export function SovereignSkillsPanel() {
             <div className="flex items-center gap-2">
               <Binary className="size-4 text-platinum" />
               <h3 className="text-xs font-bold font-mono text-platinum uppercase tracking-wider">
-                Matriz de 25 Skills (DOI)
+                Skills Nativos ({skills.length})
               </h3>
             </div>
             <span className="text-[9px] font-mono bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full font-bold">
-              UNPATCHED S0
+              DOI S0 + EVOLVED
             </span>
           </div>
 

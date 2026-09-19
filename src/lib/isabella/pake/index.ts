@@ -24,5 +24,5 @@ export interface TransparencyMarker {
 }
 
 // Export utilities and services
-export * from './EthicalRegistry';
-export * from './EthicalValidator';
+export * from "./EthicalRegistry";
+export * from "./EthicalValidator";
