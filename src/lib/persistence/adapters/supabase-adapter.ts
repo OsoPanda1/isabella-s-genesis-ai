@@ -38,11 +38,7 @@ async function getSupabase(): Promise<SupabaseClient | null> {
   if (!url) return null;
   const identity = getRequestIdentity();
   if (!identity) return null;
-<<<<<<< Updated upstream
   const jwt = await SecuritySystem.generateSovereignToken(
-=======
-  const jwt = SecuritySystem.generateSupabaseRlsToken(
->>>>>>> Stashed changes
     identity.userId,
     identity.tenantId,
     identity.scope,

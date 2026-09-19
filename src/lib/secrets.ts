@@ -38,7 +38,6 @@ export class SecretsManager {
       throw new Error(
         `[Zero Trust Secrets] Secreto requerido no configurado: ${label} (${kind}). No se admiten fallbacks locales.`,
       );
-<<<<<<< Updated upstream
     }
 
     return String(secretValue);
@@ -50,31 +49,6 @@ export class SecretsManager {
     if (!secretValue || String(secretValue).trim() === "") {
       throw new Error(
         `[Zero Trust Secrets] Secreto requerido no configurado: ${label} (${kind}). No se admiten fallbacks locales.`,
-=======
-    },
-    bookpiSigningKey() {
-      const alg = cfg().BOOKPI_SIGNATURE_ALGORITHM;
-      if (alg === "NOT_IMPLEMENTED") return "";
-      return requireSecret("bookpi", cfg().BOOKPI_SIGNING_KEY, "BOOKPI_SIGNING_KEY");
-    },
-    aiGatewayKey() {
-      return cfg().GEMINI_API_KEY || requireSecret("ai", undefined, "GEMINI_API_KEY");
-    },
-    supabaseJwtSecret() {
-      return cfg().SUPABASE_JWT_SECRET;
-    },
-    policySigningKey() {
-      return cfg().CROWN_POLICY_SIGNING_KEY;
-    },
-    apiKeyHashSecret() {
-      // P0-APIKEYS: sin fallback a AUTH_JWT_SECRET. Derivar el HMAC de la llave
-      // de API desde el secreto de sesión reutiliza material criptográfico de
-      // alcance distinto; se exige una clave huésped dedicada (fail-closed).
-      return requireSecret(
-        "jwt",
-        cfg().API_KEY_HASH_SECRET,
-        "API_KEY_HASH_SECRET (dedicada; mín. 16 caracteres, sin derivar de AUTH_JWT_SECRET)",
->>>>>>> Stashed changes
       );
     }
 

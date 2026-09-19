@@ -11,12 +11,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
-<<<<<<< Updated upstream
 import { config } from "@/lib/config";
 import { isProductionLike, resolveRuntimeMode } from "@/lib/runtime-mode";
-=======
-import { config } from "../config";
->>>>>>> Stashed changes
 
 export type MemoryScope = "turn" | "session" | "project" | "territorial" | "historical";
 export type MemorySource = "user" | "system" | "tool" | "document";
@@ -78,21 +74,7 @@ function assertFilePersistenceAllowed(storePath: string): void {
 }
 
 export function createMemoryRepository(storePath: string = STORE_PATH) {
-<<<<<<< Updated upstream
   assertFilePersistenceAllowed(storePath);
-=======
-  const runtime = config();
-  const isProdLike =
-    runtime.ISABELLA_RUNTIME_MODE === "production" ||
-    runtime.ISABELLA_RUNTIME_MODE === "staging";
-  // FASE 7 fail-closed; `DURABLE_JSON_ALLOWED=true` es el escape-hatch de
-  // transición del mismo contrato que `json-adapter` (ver repository-factory).
-  if (isProdLike && runtime.DURABLE_JSON_ALLOWED !== true) {
-    throw new Error(
-      "JSON memory persistence is disabled in staging and production. Use the PostgreSQL/Supabase repository as source of truth (FASE 7 — fail-closed).",
-    );
-  }
->>>>>>> Stashed changes
 
   function loadStore(): MemoryStoreFile {
     if (!fs.existsSync(storePath)) return { records: [], genesisChainHash: GENESIS_CHAIN_HASH };
