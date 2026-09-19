@@ -175,14 +175,14 @@ export class DualKernel {
         },
         classification: classification.classification as any,
         intent: request.intent,
-        requestedCapabilities: request.requestedCapabilities ??,
+        requestedCapabilities: request.requestedCapabilities ?? [],
       };
 
       // ─── BETA: Capability Selection ────────────────────────
       if (governance.result === "allow" || governance.result === "review") {
         const capability = capabilityRegistry.select({
           intent: request.intent,
-          requestedCapabilities: request.requestedCapabilities ??,
+          requestedCapabilities: request.requestedCapabilities ?? [],
           allowedScopes: identity.scopes,
           constraints: request.constraints,
         });
