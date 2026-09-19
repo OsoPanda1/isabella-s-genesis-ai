@@ -118,7 +118,7 @@ export function createBookpiPostgresRepository() {
   /**
    * Listado de bloques por tenant.
    */
-  list(tenantId: string): Promise<BlockPIBlock[]> {
+  function list(tenantId: string): Promise<BlockPIBlock[]> {
     return pool
       .query("SELECT * FROM public.bookpi_ledger WHERE tenant_id = $1 ORDER BY index ASC", [
         tenantId,
