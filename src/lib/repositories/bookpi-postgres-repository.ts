@@ -55,54 +55,23 @@ function hashBlock(block: Omit<BlockPIBlock, "blockHash">): string {
   return createHash("sha256").update(canonicalBookPiPayload(block)).digest("hex");
 }
 
-/**
- * Algoritmos soportados por la columna `signature_algorithm` / `pqc_signature`.
- * - NOT_IMPLEMENTED: sin firma criptográfica (default del esquema).
- * - ECDSA_P256_SHA256 / ED25519: firma real sobre el hash del bloque.
- * El entorno debe declarar BOOKPI_SIGNATURE_ALGORITHM y BOOKPI_SIGNING_KEY
- * (clave privada PEM) para activar las firmas.
- */
-export const BOOKPI_SIGNATURE_ALGORITHMS = [
-  "NOT_IMPLEMENTED",
-  "ECDSA_P256_SHA256",
-  "ED25519",
-] as const;
-export type BookpiSignatureAlgorithm = (typeof BOOKPI_SIGNATURE_ALGORITHMS)[number];
-
-function resolvedSignatureAlgorithm(): BookpiSignatureAlgorithm {
-  const raw = config().BOOKPI_SIGNATURE_ALGORITHM?.trim() || "NOT_IMPLEMENTED";
-  if ((BOOKPI_SIGNATURE_ALGORITHMS as readonly string[]).includes(raw)) {
-    return raw as BookpiSignatureAlgorithm;
-  }
-  throw new Error(
-    `BOOKPI_SIGNATURE_ALGORITHM inválido: "${raw}". Valores soportados: ${BOOKPI_SIGNATURE_ALGORITHMS.join(", ")} (fail-closed).`,
-  );
-}
-
-function signBlockHash(blockHash: string, key: string, algorithm: BookpiSignatureAlgorithm): string {
-  const signer = algorithm === "ED25519" ? createSign(null) : createSign("SHA256");
-  signer.update(blockHash);
-  return signer.end().sign({ key, padding: undefined }, "base64");
-}
-
-function verifyBlockHash(
-  blockHash: string,
-  signature: string,
-  key: string,
-  algorithm: BookpiSignatureAlgorithm,
-): boolean {
-  const verifier = algorithm === "ED25519" ? createVerify(null) : createVerify("SHA256");
-  verifier.update(blockHash);
-  return verifier.verify({ key, padding: undefined }, signature, "base64");
-}
-
-/**
- * Respaldo de firma: devuelve la clave privada PEM de BOOKPI_SIGNING_KEY cuando
- * el algoritmo declarado lo requiere (fail-closed si falta).
- */
-function signingKeyFor(algorithm: BookpiSignatureAlgorithm): string | null {
-  if (algorithm === "NOT_IMPLEMENTED") return null;
-  return secrets.bookpiSigningKey() || null;
+function mapRow(row: Record<string, unknown>): BlockPIBlock {
+  return {
+    index: Number(row.index),
+    timestamp: new Date(row.created_at as string ?? row.timestamp as string).toISOString(),
+    tenantId: String(row.tenant_id),
+    userId: String(row.user_id),
+    operation: String(row.operation),
+    category: row.category as LedgerCategory,
+    costDecimal: String(row.cost_decimal),
+    tokensConsumed: Number(row.tokens_consumed),
+    previousHash: String(row.previous_hash),
+    blockHash: String(row.block_hash),
+    pqcSignature: (row.pqc_signature as string | null) ?? null,
+    signatureAlgorithm: String(row.signature_algorithm ?? "NOT_IMPLEMENTED"),
+    status: row.status as LedgerStatus,
+    nonce: String(row.nonce),
+  };
 }
 
 /**
@@ -114,6 +83,15 @@ function signingKeyFor(algorithm: BookpiSignatureAlgorithm): string | null {
 export function createBookpiPostgresRepository() {
   const cfg = config();
   const pool = getPool(cfg.DATABASE_URL as string);
+
+  /** Último bloque del tenant (o null si la cadena está vacía). */
+  async function readPrevious(tenantId: string): Promise<BlockPIBlock | null> {
+    const { rows } = await pool.query(
+      "SELECT * FROM public.bookpi_ledger WHERE tenant_id = $1 ORDER BY index DESC LIMIT 1",
+      [tenantId],
+    );
+    return rows[0] ? mapRow(rows[0]) : null;
+  }
 
   /**
    * Listado de bloques por tenant.
@@ -143,8 +121,7 @@ export function createBookpiPostgresRepository() {
     const timestamp = new Date().toISOString();
     const costDecimal = input.cost.toFixed(2);
     const status: LedgerStatus = input.status ?? "settled";
-    const signatureAlgorithm = resolvedSignatureAlgorithm();
-    const signingKey = signingKeyFor(signatureAlgorithm);
+    const signatureAlgorithm: string = getSigningAlgorithm();
     const base: Omit<BlockPIBlock, "blockHash"> = {
       index,
       timestamp,
@@ -668,8 +645,6 @@ export function createBookpiPostgresRepository() {
     }
     let previousTenant = "";
     let previousHash = GENESIS_PREVIOUS_HASH;
-    const signingAlgorithm = resolvedSignatureAlgorithm();
-    const verifyingKey = signingKeyFor(signingAlgorithm);
     for (const row of rows) {
       const block = mapRow(row);
       if (block.tenantId !== previousTenant) {
