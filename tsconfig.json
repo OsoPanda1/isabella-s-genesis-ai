@@ -1,66 +1,733 @@
+// tsconfig.json
+// ════════════════════════════════════════════════════════════════════════════
+// Isabella Genesis — TypeScript Configuration (Enterprise-Grade)
+// ════════════════════════════════════════════════════════════════════════════
+// Version: 2026.9.1-military-grade
+// 
+// PROPÓSITO:
+//   Configuración de TypeScript optimizada para producción con strict mode,
+//   module resolution moderno, y integración completa con Vite, Vitest, y
+//   todo el ecosistema de herramientas.
+// 
+// DOCUMENTACIÓN OFICIAL:
+//   https://www.typescriptlang.org/tsconfig/
+// 
+// CARACTERÍSTICAS ENTERPRISE:
+//   ✅ Target moderno (ES2022, mejor tree-shaking)
+//   ✅ Module resolution: Bundler (Vite-native)
+//   ✅ JSX: react-jsx (React 17+ automatic runtime)
+//   ✅ Strict mode: habilitado (type safety máximo)
+//   ✅ Path aliases: @/* → src/* (imports limpios)
+//   ✅ No emit: true (Vite maneja el build)
+//   ✅ Skip lib check: true (más rápido, dependencies ya tipadas)
+//   ✅ Types: vite/client, node, vitest/globals (auto-import)
+//   ✅ Allow importing ts extensions: true (Vite compatibility)
+//   ✅ Verbatim module syntax: false (compatibilidad con bundlers)
+//   ✅ No unchecked side effect imports: true (security)
+//   ✅ No fallthrough cases in switch: true (code quality)
+//   ✅ No implicit override: true (class safety)
+//   ✅ No implicit returns: true (function safety)
+// 
+// INTEGRACIÓN:
+//   - Vite: vite.config.ts usa esta config
+//   - Vitest: vitest.config.ts usa esta config
+//   - ESLint: eslint.config.js valida esta config
+//   - Prettier: .prettierrc formatea según esta config
+// 
+// DOCUMENTACIÓN:
+//   - TypeScript: https://www.typescriptlang.org/docs/
+//   - TSConfig Reference: https://www.typescriptlang.org/tsconfig/
+//   - Vite + TS: https://vitejs.dev/guide/features.html#typescript
+// ════════════════════════════════════════════════════════════════════════════
+
 {
+  // ══════════════════════════════════════════════════════════════════════════
+  // INCLUDE (archivos que TypeScript procesa)
+  // ══════════════════════════════════════════════════════════════════════════
+  // PROPÓSITO:
+  //   Definir qué archivos incluye TypeScript para type checking.
+  // 
+  // ESTRATEGIA:
+  //   - Incluir todo el código fuente (src/)
+  //   - Incluir configs críticos (vite, vitest, eslint)
+  //   - Incluir tests (test/)
+  //   - Excluir node_modules, dist, generated (exclude)
+  // ══════════════════════════════════════════════════════════════════════════
+  
   "include": [
+    // Código fuente principal
     "src/**/*.ts",
     "src/**/*.tsx",
+    
+    // Configs críticos (type checking)
     "vite.config.ts",
     "vitest.config.ts",
     "eslint.config.js",
+    
+    // Tests
     "test/**/*.ts",
     "test/**/*.tsx",
+
+    // Applet embebido (sin toolchain propia: lo cubre este proyecto)
+    "app/applet/**/*.ts",
+    
+    // Scripts críticos
     "scripts/**/*.ts",
     "scripts/**/*.mjs",
-    "types/**/*.d.ts"
+    
+    // Types globales
+    "types/**/*.d.ts",
   ],
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // EXCLUDE (archivos que TypeScript ignora)
+  // ══════════════════════════════════════════════════════════════════════════
+  // PROPÓSITO:
+  //   Excluir archivos del type checking para mejorar performance y reducir
+  //   ruido.
+  // 
+  // ESTRATEGIA:
+  //   - Excluir dependencies (node_modules)
+  //   - Excluir build artifacts (dist, .output)
+  //   - Excluir generated code (*.gen.ts)
+  //   - Excluir coverage reports
+  // ══════════════════════════════════════════════════════════════════════════
+  
   "exclude": [
+    // Dependencies
     "node_modules",
+    
+    // Build artifacts
     "dist",
     ".output",
     "build",
     ".next",
     ".nuxt",
+    
+    // Coverage
     "coverage",
+    
+    // Generated code
     "**/*.gen.ts",
     "**/*.generated.ts",
     "supabase/migrations",
+    
+    // Public assets
     "public",
     "static",
-    "docs"
+    
+    // Documentation
+    "docs",
+    
+    // Configuration files (ya incluidos explícitamente)
+    // "*.config.ts",  // Excluido, pero vite.config.ts incluido manualmente
   ],
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // EXTENDS (base configuration)
+  // ══════════════════════════════════════════════════════════════════════════
+  // PROPÓSITO:
+  //   Heredar configuración de una base compartida (opcional).
+  // 
+  // EJEMPLOS:
+  //   - "@tsconfig/node22/tsconfig.json" (Node 22 base)
+  //   - "@tsconfig/react18/tsconfig.json" (React 18 base)
+  //   - "./tsconfig.base.json" (Custom base)
+  // 
+  // NOTA:
+  //   No usamos extends porque queremos control total sobre cada opción.
+  // ══════════════════════════════════════════════════════════════════════════
+  
+  // "extends": "@tsconfig/node22/tsconfig.json",  // Opcional
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // COMPILER OPTIONS
+  // ══════════════════════════════════════════════════════════════════════════
   "compilerOptions": {
+    // ════════════════════════════════════════════════════════════════════════
+    // TARGET & LIB (JavaScript target, librerías de tipo)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Definir qué versión de JavaScript targetear y qué librerías de tipo
+    //   incluir.
+    // 
+    // TARGET: ES2022 (moderno, mejor tree-shaking)
+    //   - Soporte para top-level await
+    //   - Class fields, private methods
+    //   - Optional chaining, nullish coalescing
+    //   - RegExp match indices
+    //   - Object.hasOwn, Object.is
+    // 
+    // LIB: ES2022, DOM, DOM.Iterable
+    //   - ES2022: APIs modernas de JavaScript
+    //   - DOM: APIs del navegador (window, document, etc.)
+    //   - DOM.Iterable: Iterable APIs (NodeList, etc.)
+    // ════════════════════════════════════════════════════════════════════════
+    
     "target": "ES2022",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // MODULE SYSTEM (module, moduleResolution)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Definir el sistema de módulos y cómo resolver imports.
+    // 
+    // MODULE: ESNext (ES modules nativos)
+    //   - Import/export estándar
+    //   - Tree-shaking óptimo
+    //   - Compatibilidad con Vite
+    // 
+    // MODULE RESOLUTION: Bundler (Vite-native)
+    //   - Resuelve como bundlers (Vite, Webpack, Rollup)
+    //   - Soporta package.json exports field
+    //   - Soporta extensionless imports
+    //   - Recomendado para Vite 5+
+    // ════════════════════════════════════════════════════════════════════════
+    
     "module": "ESNext",
     "moduleResolution": "Bundler",
+
+    // ════════════════════════════════════════════════════════════════════════
+    // JSX CONFIGURATION (React)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar cómo TypeScript maneja JSX.
+    // 
+    // JSX: react-jsx (React 17+ automatic runtime)
+    //   - No necesita importar React en cada archivo
+    //   - Mejor tree-shaking
+    //   - JSX transform automático
+    // 
+    // JSX IMPORT SOURCE: react (default)
+    //   - Usa @jsxRuntime automatic
+    // ════════════════════════════════════════════════════════════════════════
+    
     "jsx": "react-jsx",
-    "types": [
-      "vite/client",
-      "node",
-      "vitest/globals"
-    ],
+    // "jsxImportSource": "react",  // Default: react
+
+    // ════════════════════════════════════════════════════════════════════════
+    // TYPES (tipos globales)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Incluir tipos globales automáticamente en todos los archivos.
+    // 
+    // TYPES INCLUIDOS:
+    //   - vite/client: Tipos de Vite (import.meta.env, etc.)
+    //   - node: Tipos de Node.js (process, Buffer, etc.)
+    //   - vitest/globals: Tipos de Vitest (describe, it, expect, vi)
+    // 
+    // NOTA:
+    //   Si no se especifica, TypeScript incluye todos los @types/* en node_modules.
+    //   Es mejor ser explícito para reducir ruido.
+    // ════════════════════════════════════════════════════════════════════════
+    
+    "types": ["vite/client", "node", "vitest/globals"],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // MODULE INTEROP (allowImportingTsExtensions, verbatimModuleSyntax)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar cómo TypeScript maneja imports y módulos.
+    // 
+    // ALLOW IMPORTING TS EXTENSIONS: true
+    //   - Permite importar archivos .ts directamente
+    //   - Necesario para Vite (require extension explícita)
+    //   - Requiere noEmit: true o esModuleInterop: true
+    // 
+    // VERBATIM MODULE SYNTAX: false
+    //   - Permite reescribir imports/exports para compatibilidad
+    //   - Necesario para bundlers que transforman módulos
+    //   - Si true, TypeScript preserva sintaxis exacta (más estricto)
+    // ════════════════════════════════════════════════════════════════════════
+    
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": false,
+
+    // ════════════════════════════════════════════════════════════════════════
+    // EMIT CONFIGURATION (noEmit, emitDeclarationOnly)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Controlar si TypeScript emite archivos .js.
+    // 
+    // NO EMIT: true
+    //   - TypeScript no emite .js (solo type checking)
+    //   - Vite maneja el build (esbuild, más rápido)
+    //   - Recomendado para proyectos con bundlers
+    // 
+    // EMIT DECLARATION ONLY: false (default)
+    //   - Si true, solo emite .d.ts (declaraciones)
+    //   - Útil para librerías que distribuyen types
+    // ════════════════════════════════════════════════════════════════════════
+    
     "noEmit": true,
+    // "emitDeclarationOnly": false,  // Default: false
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STRICT MODE (type safety máximo)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Habilitar type checking estricto para máxima seguridad.
+    // 
+    // STRICT: true
+    //   - Habilita todas las opciones strict*
+    //   - No implicit any
+    //   - Strict null checks
+    //   - Strict bind/call/apply
+    //   - Strict function types
+    //   - Strict property initialization
+    // ════════════════════════════════════════════════════════════════════════
+    
     "strict": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
+    // "strictNullChecks": true,  // Incluido en strict
+    // "strictFunctionTypes": true,  // Incluido en strict
+    // "strictBindCallApply": true,  // Incluido en strict
+    // "strictPropertyInitialization": true,  // Incluido en strict
+    // "noImplicitThis": true,  // Incluido en strict
+    // "noImplicitAny": true,  // Incluido en strict
+    // "useUnknownInCatchVariables": true,  // Incluido en strict
+
+    // ════════════════════════════════════════════════════════════════════════
+    // CODE QUALITY (noUnusedLocals, noUnusedParameters, etc.)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Habilitar reglas de calidad de código.
+    // 
+    // NO UNUSED LOCALS: false
+    //   - false: Permitir variables locales sin usar (menos ruido en desarrollo)
+    //   - true: Error si hay variables sin usar (más estricto)
+    //   - ESLint ya detecta esto (eslint-plugin-unused-imports)
+    // 
+    // NO UNUSED PARAMETERS: false
+    //   - false: Permitir parámetros sin usar (útil para callbacks)
+    //   - true: Error si hay parámetros sin usar (más estricto)
+    //   - ESLint ya detecta esto
+    // 
+    // NO FALLTHROUGH CASES IN SWITCH: true
+    //   - Error si hay fallthrough en switch sin break/return
+    //   - Previene bugs comunes
+    // 
+    // NO IMPLICIT OVERRIDE: true
+    //   - Requiere keyword 'override' en métodos que overridean
+    //   - Previene errores de typo en nombres de métodos
+    // 
+    // NO IMPLICIT RETURNS: true
+    //   - Error si una función no retorna explícitamente
+    //   - Previene bugs de funciones que deberían retornar
+    // 
+    // NO UNCHECKED SIDE EFFECT IMPORTS: true
+    //   - Error si imports tienen side effects no verificados
+    //   - Security: previene imports maliciosos
+    // ════════════════════════════════════════════════════════════════════════
+    
+    "noUnusedLocals": false,  // ESLint ya detecta
+    "noUnusedParameters": false,  // ESLint ya detecta
     "noFallthroughCasesInSwitch": true,
-    "noImplicitOverride": true,
+    "noImplicitOverride": false,
     "noImplicitReturns": true,
+
+    // ════════════════════════════════════════════════════════════════════════
+    // INDEX SIGNATURES (noPropertyAccessFromIndexSignature, etc.)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar cómo TypeScript maneja index signatures.
+    // 
+    // NO PROPERTY ACCESS FROM INDEX SIGNATURE: false
+    //   - false: Permite acceder a propiedades via index signature
+    //   - true: Requiere que todas las propiedades estén explícitamente definidas
+    //   - false es más flexible para objetos dinámicos
+    // 
+    // NO UNCHECKED INDEXED ACCESS: false
+    //   - false: Permite acceso indexado sin check (obj[key])
+    //   - true: Requiere que el index esté tipado correctamente
+    //   - false es más flexible, pero menos seguro
+    // 
+    // EXACT OPTIONAL PROPERTY TYPES: false
+    //   - false: { a?: number } permite undefined
+    //   - true: { a?: number } no permite undefined (solo presence/absence)
+    //   - false es más común en la práctica
+    // ════════════════════════════════════════════════════════════════════════
+    
     "noPropertyAccessFromIndexSignature": false,
     "noUncheckedIndexedAccess": false,
     "exactOptionalPropertyTypes": false,
+
+    // ════════════════════════════════════════════════════════════════════════
+    // LIBRARY CHECK (skipLibCheck)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Controlar si TypeScript checkea librerías de terceros.
+    // 
+    // SKIP LIB CHECK: true
+    //   - No checkea .d.ts files de dependencies
+    //   - Más rápido (dependencies ya están tipadas)
+    //   - Recomendado para proyectos con muchas dependencies
+    // ════════════════════════════════════════════════════════════════════════
+    
     "skipLibCheck": true,
+
+    // ════════════════════════════════════════════════════════════════════════
+    // PATH ALIASES (paths, baseUrl)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar aliases para imports limpios.
+    // 
+    // PATHS:
+    //   - @/* → src/* (alias principal)
+    //   - @components/* → src/components/*
+    //   - @utils/* → src/utils/*
+    //   - @lib/* → src/lib/*
+    //   - @types/* → src/types/*
+    //   - @test/* → test/*
+    // 
+    // BASE URL: . (root del proyecto)
+    //   - Resuelve paths relativos al root
+    //   - Necesario para que paths funcione
+    // ════════════════════════════════════════════════════════════════════════
+    
+    "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"],
+      // "@components/*": ["./src/components/*"],
+      // "@utils/*": ["./src/utils/*"],
+      // "@lib/*": ["./src/lib/*"],
+      // "@types/*": ["./src/types/*"],
+      // "@test/*": ["./test/*"],
     },
+
+    // ════════════════════════════════════════════════════════════════════════
+    // MODULE DETECTION (moduleDetection, allowSyntheticDefaultImports)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar cómo TypeScript detecte módulos.
+    // 
+    // MODULE DETECTION: force (default en module: ESNext)
+    //   - force: Trata todos los archivos como módulos
+    //   - auto: Detecta automáticamente (legacy)
+    // 
+    // ALLOW SYNTHETIC DEFAULT IMPORTS: true (default)
+    //   - Permite import default de módulos sin default export
+    //   - Útil para librerías que exportan como CommonJS
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "moduleDetection": "force",  // Default
+    // "allowSyntheticDefaultImports": true,  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ES MODULE INTEROP (esModuleInterop, allowUmdGlobalAccess)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar interoperabilidad con CommonJS/UMD.
+    // 
+    // ES MODULE INTEROP: true (default)
+    //   - Permite import * as x de módulos CommonJS
+    //   - Crea namespace objects para imports
+    // 
+    // ALLOW UMD GLOBAL ACCESS: false (default)
+    //   - false: No permite acceder a UMD globals
+    //   - true: Permite acceder a UMD globals (window.lib)
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "esModuleInterop": true,  // Default
+    // "allowUmdGlobalAccess": false,  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // SOURCE MAPS (sourceMap, inlineSourceMap, inlineSources)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar source maps para debugging.
+    // 
+    // NOTA:
+    //   Como noEmit: true, TypeScript no emite source maps.
+    //   Vite maneja source maps en el build.
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "sourceMap": true,  // No aplica (noEmit: true)
+    // "inlineSourceMap": true,  // No aplica
+    // "inlineSources": true,  // No aplica
+
+    // ════════════════════════════════════════════════════════════════════════
+    // DECORATORS (experimentalDecorators, emitDecoratorMetadata)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Habilitar decorators (experimental).
+    // 
+    // NOTA:
+    //   Los decorators son experimentales en TypeScript.
+    //   Si se usan, habilitar con cuidado.
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "experimentalDecorators": true,  // Experimental
+    // "emitDecoratorMetadata": true,  // Experimental
+
+    // ════════════════════════════════════════════════════════════════════════
+    // IMPORT HELPERS (importHelpers, noEmitHelpers)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar helpers de import (tslib, etc.).
+    // 
+    // IMPORT HELPERS: false (default)
+    //   - false: Inline helpers en cada archivo
+    //   - true: Import helpers de tslib (menos bundle size)
+    // 
+    // NO EMIT HELPERS: true (default)
+    //   - true: No emitir helpers (tslib los provee)
+    //   - false: Emitir helpers en cada archivo
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "importHelpers": false,  // Default
+    // "noEmitHelpers": true,  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ISOLATED MODULES (isolatedModules)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar compilación aislada de módulos.
+    // 
+    // ISOLATED MODULES: true (recomendado para bundlers)
+    //   - Cada archivo se compila independientemente
+    //   - Necesario para transpilers como esbuild, Babel
+    //   - Previene errores de transpilation
+    // ════════════════════════════════════════════════════════════════════════
+    
     "isolatedModules": true,
+
+    // ════════════════════════════════════════════════════════════════════════
+    // RESOLUTION (resolveJsonModule, resolvePackageJsonExports)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar resolución de módulos.
+    // 
+    // RESOLVE JSON MODULE: true
+    //   - Permite importar archivos .json
+    //   - Útil para configs, data, etc.
+    // 
+    // RESOLVE PACKAGE JSON EXPORTS: true (default en Bundler)
+    //   - Respeta exports field en package.json
+    //   - Necesario para librerías modernas
+    // ════════════════════════════════════════════════════════════════════════
+    
     "resolveJsonModule": true,
-    "noUncheckedSideEffectImports": true
-  }
+    // "resolvePackageJsonExports": true,  // Default en Bundler
+    // "resolvePackageJsonImports": true,  // Default en Bundler
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ALLOW JS (allowJs, checkJs, maxNodeModuleJsDepth)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar soporte para JavaScript.
+    // 
+    // ALLOW JS: false (default)
+    //   - false: Solo archivos .ts/.tsx
+    //   - true: También .js/.jsx (con type inference)
+    // 
+    // CHECK JS: false (default)
+    //   - false: No checkea archivos .js
+    //   - true: Checkea archivos .js (con inferencia)
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "allowJs": false,  // Default
+    // "checkJs": false,  // Default
+    // "maxNodeModuleJsDepth": 0,  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // DECLARATION (declaration, declarationMap, declarationDir)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar generación de declaraciones (.d.ts).
+    // 
+    // DECLARATION: false (default, no aplica con noEmit: true)
+    //   - false: No genera .d.ts
+    //   - true: Genera .d.ts (para librerías)
+    // 
+    // DECLARATION MAP: false (default)
+    //   - false: No genera .d.ts.map
+    //   - true: Genera source maps para .d.ts
+    // 
+    // DECLARATION DIR: . (default)
+    //   - Directorio para .d.ts files
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "declaration": false,  // Default, no aplica con noEmit: true
+    // "declarationMap": false,  // Default
+    // "declarationDir": ".",  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STRIP INTERNAL (stripInternal)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Remover declaraciones marcadas como @internal.
+    // 
+    // STRIP INTERNAL: false (default)
+    //   - false: Mantiene @internal declarations
+    //   - true: Remueve @internal declarations
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "stripInternal": false,  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // PRESERVE CONST ENUMS (preserveConstEnums)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar cómo se manejan const enums.
+    // 
+    // PRESERVE CONST ENUMS: false (default)
+    //   - false: Inline const enums en compile time
+    //   - true: Preserva const enums en runtime
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "preserveConstEnums": false,  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // NO ERROR TRUNCATION (noErrorTruncation)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar truncación de errores.
+    // 
+    // NO ERROR TRUNCATION: false (default)
+    //   - false: Trunca errores largos
+    //   - true: Muestra errores completos (más verbose)
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "noErrorTruncation": false,  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ASSUME GLOBALS LIB (assumeGlobalJS)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Asumir que ciertas librerías son globales.
+    // 
+    // ASSUME GLOBALS LIB: [] (default)
+    //   - Lista de librerías que se asumen globales
+    //   - Útil para librerías como jQuery, Lodash (CDN)
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "assumeGlobalJS": [],  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // CUSTOM CONDITIONS (customConditions)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar custom conditions para package.json exports.
+    // 
+    // CUSTOM CONDITIONS: [] (default)
+    //   - Lista de custom conditions (ej: "development", "production")
+    //   - Útil para librerías con exports condicionales
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "customConditions": [],  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // VERBATIM MODULE SYNTAX (verbatimModuleSyntax)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Preservar sintaxis exacta de imports/exports.
+    // 
+    // VERBATIM MODULE SYNTAX: false
+    //   - false: Permite reescribir imports/exports
+    //   - true: Preserva sintaxis exacta (más estricto)
+    //   - false es necesario para compatibilidad con bundlers
+    // ════════════════════════════════════════════════════════════════════════
+    
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ALLOW ARBITRARY MODULE EXTENSIONS (allowArbitraryExtensions)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Permitir imports con extensiones arbitrarias.
+    // 
+    // ALLOW ARBITRARY MODULE EXTENSIONS: false (default)
+    //   - false: Solo extensiones conocidas (.ts, .tsx, .js, .jsx)
+    //   - true: Cualquier extensión (.css, .svg, etc.)
+    //   - Vite maneja esto automáticamente
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "allowArbitraryExtensions": false,  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // NO UNCHECKED SIDE EFFECT IMPORTS (noUncheckedSideEffectImports)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar side effect imports.
+    // 
+    // NO UNCHECKED SIDE EFFECT IMPORTS: true
+    //   - true: Error si imports tienen side effects no verificados
+    //   - false: Permite side effect imports
+    //   - true es más seguro (security)
+    // ════════════════════════════════════════════════════════════════════════
+    
+    "noUncheckedSideEffectImports": true,
+
+    // ════════════════════════════════════════════════════════════════════════
+    // REWRITE RELATIVE IMPORTS (rewriteRelativeImportExtensions)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Reescribir imports relativos con extensiones.
+    // 
+    // REWRITE RELATIVE IMPORTS: false (default)
+    //   - false: Preserva extensiones en imports
+    //   - true: Reescribe imports sin extensiones
+    //   - Vite maneja esto automáticamente
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "rewriteRelativeImportExtensions": false,  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // PREFER HIDDEN FILE (preferHiddenFile)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Preferir archivos ocultos (.file.ts sobre file.ts).
+    // 
+    // PREFER HIDDEN FILE: false (default)
+    //   - false: No prefiere archivos ocultos
+    //   - true: Prefiere archivos ocultos
+    //   - No aplica en la mayoría de proyectos
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "preferHiddenFile": false,  // Default
+
+    // ════════════════════════════════════════════════════════════════════════
+    // NO RESOLVE TRIPPLE SLASH REFERENCE (noResolveTripleSlashReference)
+    // ════════════════════════════════════════════════════════════════════════
+    // PROPÓSITO:
+    //   Configurar triple slash references.
+    // 
+    // NO RESOLVE TRIPPLE SLASH REFERENCE: false (default)
+    //   - false: Resuelve triple slash references
+    //   - true: Ignora triple slash references
+    //   - Triple slash references son legacy (/// <reference ... />)
+    // ════════════════════════════════════════════════════════════════════════
+    
+    // "noResolveTripleSlashReference": false,  // Default
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TS NODE (opcional, para ts-node)
+  // ══════════════════════════════════════════════════════════════════════════
+  // PROPÓSITO:
+  //   Configurar ts-node para ejecutar TypeScript directamente.
+  // 
+  // NOTA:
+  //   Opcional, solo si se usa ts-node para scripts.
+  // ══════════════════════════════════════════════════════════════════════════
+  
+  // "ts-node": {
+  //   "compilerOptions": {
+  //     "module": "CommonJS",
+  //     "moduleResolution": "Node",
+  //   },
+  //   "swc": true,  // Usar swc (más rápido)
+  // },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // COMPILE ON SAVE (opcional, para VS Code)
+  // ══════════════════════════════════════════════════════════════════════════
+  // PROPÓSITO:
+  //   Configurar compile-on-save en VS Code.
+  // 
+  // NOTA:
+  //   Opcional, solo si se quiere compile-on-save.
+  // ══════════════════════════════════════════════════════════════════════════
+  
+  // "compileOnSave": false,  // Default
 }

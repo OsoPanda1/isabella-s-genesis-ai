@@ -1,0 +1,255 @@
+version: '2.0.1'
+name: 'Genesis 2.0 Core Policy'
+description: 'Política base para auditoría de repositorios Isabella Villaseñor AI'
+
+globals:
+  failClosed: true
+  trustLevel: 'zero'
+  evidenceTtlDays: 90
+  reauditFrequencyDays: 30
+
+claimRequirements:
+  PLANNED:
+    minEvidence: 0
+    requiredEvidenceTypes: []
+    
+  DESIGNED:
+    minEvidence: 1
+    requiredEvidenceTypes:
+      - 'ARCHITECTURE_DOCUMENT'
+      - 'ADR'
+      
+  IMPLEMENTED:
+    minEvidence: 2
+    requiredEvidenceTypes:
+      - 'SOURCE_CODE'
+      - 'UNIT_TEST'
+    minCodeCoverage: 0.80
+    
+  TESTED:
+    minEvidence: 4
+    requiredEvidenceTypes:
+      - 'SOURCE_CODE'
+      - 'UNIT_TEST'
+      - 'INTEGRATION_TEST'
+      - 'SECURITY_TEST'
+    minCodeCoverage: 0.90
+    stabilityDays: 30
+    
+  VERIFIED:
+    minEvidence: 6
+    requiredEvidenceTypes:
+      - 'SOURCE_CODE'
+      - 'UNIT_TEST'
+      - 'INTEGRATION_TEST'
+      - 'SECURITY_TEST'
+      - 'CONCURRENCY_TEST'
+      - 'EXTERNAL_AUDIT'
+    minCodeCoverage: 0.95
+    stabilityDays: 90
+    externalReviewRequired: true
+    
+  PRODUCTION-VERIFIED:
+    minEvidence: 10
+    requiredEvidenceTypes:
+      - 'SOURCE_CODE'
+      - 'UNIT_TEST'
+      - 'INTEGRATION_TEST'
+      - 'SECURITY_TEST'
+      - 'CONCURRENCY_TEST'
+      - 'EXTERNAL_AUDIT'
+      - 'DEPLOYMENT_RECORD'
+      - 'HEALTH_CHECK'
+      - 'MONITORING_DATA'
+      - 'INCIDENT_REPORT'
+    minCodeCoverage: 0.95
+    stabilityDays: 90
+    productionDays: 90
+    incidentFree: true
+    slaMet: true
+
+releaseThresholds:
+  critical:
+    maxOpen: 0
+    maxAccepted: 0
+    
+  high:
+    maxOpen: 0
+    maxAccepted: 3
+    acceptanceRequires:
+      - 'risk_assessment'
+      - 'mitigation_plan'
+      - 'owner_approval'
+      
+  medium:
+    maxOpen: 5
+    maxAccepted: 10
+    
+  low:
+    maxOpen: 20
+    maxAccepted: 50
+
+requiredGates:
+  preCommit:
+    - 'secret_scan'
+    - 'lint'
+    - 'typecheck'
+    
+  preMerge:
+    - 'build'
+    - 'unit_test'
+    - 'integration_test'
+    - 'security_scan'
+    
+  preRelease:
+    - 'build'
+    - 'unit_test'
+    - 'integration_test'
+    - 'security_test'
+    - 'concurrency_test'
+    - 'e2e_test'
+    - 'performance_test'
+    - 'security_audit'
+    - 'dependency_scan'
+    - 'sbom_generation'
+    
+  postRelease:
+    - 'health_check'
+    - 'smoke_test'
+    - 'monitoring_verification'
+
+claims:
+  CLAIM-001:
+    id: 'CLAIM-001'
+    title: 'Provenance'
+    requiredStatus: 'VERIFIED'
+    evidenceRequired:
+      - 'GIT_HISTORY'
+      - 'DESIGN_RECORDS'
+      - 'DATED_ARTIFACTS'
+      
+  CLAIM-002:
+    id: 'CLAIM-002'
+    title: 'HITL for high-risk operations'
+    requiredStatus: 'TESTED'
+    evidenceRequired:
+      - 'SOURCE_CODE'
+      - 'TEST_HITL'
+      - 'POLICY_DOCUMENT'
+      
+  CLAIM-003:
+    id: 'CLAIM-003'
+    title: 'Tamper-evident audit'
+    requiredStatus: 'VERIFIED'
+    evidenceRequired:
+      - 'SOURCE_CODE'
+      - 'TEST_AUDIT_CHAIN'
+      - 'TEST_CONCURRENCY'
+      - 'WORM_CONFIG'
+      
+  CLAIM-004:
+    id: 'CLAIM-004'
+    title: 'Privacy compliance'
+    requiredStatus: 'TESTED'
+    evidenceRequired:
+      - 'DPIA'
+      - 'DPA'
+      - 'PRIVACY_POLICY'
+      - 'TEST_DATA_HANDLING'
+
+  CLAIM-005:
+    id: 'CLAIM-005'
+    title: 'Financial atomicity'
+    requiredStatus: 'PRODUCTION-VERIFIED'
+    evidenceRequired:
+      - 'SOURCE_CODE'
+      - 'UNIT_TEST'
+      - 'INTEGRATION_TEST'
+      - 'SECURITY_TEST'
+      - 'CONCURRENCY_TEST'
+      - 'EXTERNAL_AUDIT'
+      - 'DEPLOYMENT_RECORD'
+      - 'HEALTH_CHECK'
+      - 'MONITORING_DATA'
+      - 'INCIDENT_REPORT'
+
+  CLAIM-006:
+    id: 'CLAIM-006'
+    title: 'Database authority consolidation'
+    requiredStatus: 'PRODUCTION-VERIFIED'
+    evidenceRequired:
+      - 'SOURCE_CODE'
+      - 'UNIT_TEST'
+      - 'INTEGRATION_TEST'
+      - 'SECURITY_TEST'
+      - 'CONCURRENCY_TEST'
+      - 'EXTERNAL_AUDIT'
+      - 'DEPLOYMENT_RECORD'
+      - 'HEALTH_CHECK'
+      - 'MONITORING_DATA'
+      - 'INCIDENT_REPORT'
+
+  CLAIM-007:
+    id: 'CLAIM-007'
+    title: 'Sovereign state transactional persistence'
+    requiredStatus: 'PRODUCTION-VERIFIED'
+    evidenceRequired:
+      - 'SOURCE_CODE'
+      - 'UNIT_TEST'
+      - 'INTEGRATION_TEST'
+      - 'SECURITY_TEST'
+      - 'CONCURRENCY_TEST'
+      - 'EXTERNAL_AUDIT'
+      - 'DEPLOYMENT_RECORD'
+      - 'HEALTH_CHECK'
+      - 'MONITORING_DATA'
+      - 'INCIDENT_REPORT'
+
+  CLAIM-008:
+    id: 'CLAIM-008'
+    title: 'Kill switch durable with approval store'
+    requiredStatus: 'TESTED'
+    evidenceRequired:
+      - 'SOURCE_CODE'
+      - 'UNIT_TEST'
+      - 'INTEGRATION_TEST'
+      - 'SECURITY_TEST'
+      - 'CONCURRENCY_TEST'
+
+  CLAIM-009:
+    id: 'CLAIM-009'
+    title: 'MFA step-up for SovereignOwner'
+    requiredStatus: 'PLANNED'
+    evidenceRequired:
+      - 'SOURCE_CODE'
+      - 'UNIT_TEST'
+      - 'INTEGRATION_TEST'
+      - 'SECURITY_TEST'
+      - 'CONCURRENCY_TEST'
+      - 'EXTERNAL_AUDIT'
+      - 'DEPLOYMENT_RECORD'
+      - 'HEALTH_CHECK'
+      - 'MONITORING_DATA'
+      - 'INCIDENT_REPORT'
+
+  CLAIM-010:
+    id: 'CLAIM-010'
+    title: 'CSP hardened without unsafe-inline'
+    requiredStatus: 'TESTED'
+    evidenceRequired:
+      - 'SOURCE_CODE'
+      - 'UNIT_TEST'
+      - 'INTEGRATION_TEST'
+      - 'SECURITY_TEST'
+
+exceptions:
+  allowException:
+    requires:
+      - 'justification'
+      - 'risk_assessment'
+      - 'compensating_control'
+      - 'owner_approval'
+      - 'expiration_date'
+      - 'review_date'
+  maxExceptionAgeDays: 90
+  autoExpire: true

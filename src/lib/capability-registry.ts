@@ -26,13 +26,9 @@ export const CAPABILITY_STATES: readonly CapabilityState[] = [
 export interface CapabilityRecord {
   id: string;
   state: CapabilityState;
-  /** evidencia que respalda el estado (test, ruta, documento) */
   evidence?: string[];
-  /** responsabilidad (módulo o persona) */
   owner?: string;
-  /** actualización */
   updatedAt?: string;
-  /** dependencias de configuración/entorno para estar operativo */
   requiredConfig?: string[];
   metadata?: Record<string, unknown>;
 }
@@ -73,7 +69,6 @@ export class CapabilityRegistryService {
   }
 }
 
-/** Registrar genérico con los dominios declarados en la documentación. */
 export function createDefaultCapabilityRegistry(): CapabilityRegistryService {
   const svc = new CapabilityRegistryService();
   const now = new Date().toISOString();
@@ -97,6 +92,14 @@ export function createDefaultCapabilityRegistry(): CapabilityRegistryService {
   register("sandbox", "experimental", ["src/lib/sovereign-sandbox.ts"]);
   register("pqc", "unavailable");
   register("monetization", "implemented", ["src/lib/monetization/*"]);
+  register("learning", "implemented", [
+    "src/lib/isabella-learning.ts",
+    "src/lib/isabella-learning-api.ts",
+  ]);
+  register("learning.cognitive-training", "implemented", [
+    "src/lib/isabella-cognitive-training.ts",
+    "test/lib/isabella-cognitive-training.test.ts",
+  ]);
   register("heads.12", "implemented", ["12 cognitive heads configured in sovereign-engine.ts"]);
   register("nuclei.24", "simulated", ["24 cognitive nuclei modeled in sovereign-engine.ts"]);
 

@@ -12,13 +12,36 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PakeRouteImport } from './routes/pake'
 import { Route as ApiBillingRouteImport } from './routes/api/billing'
+import { Route as ApiBillingTopupIntentRouteImport } from './routes/api/billing-topup-intent'
 import { Route as ApiCatalogRouteImport } from './routes/api/catalog'
 import { Route as ApiDbRouteImport } from './routes/api/db'
 import { Route as ApiEconomicIntegrityRouteImport } from './routes/api/economic-integrity'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiIgdsRouteImport } from './routes/api/igds'
+import { Route as ApiIntelligenceRouteImport } from './routes/api/intelligence'
 import { Route as ApiIsabellaRouteImport } from './routes/api/isabella'
+import { Route as ApiIsabellaCognitiveTrainingRouteImport } from './routes/api/isabella-cognitive-training'
+import { Route as ApiIsabellaLearningRouteImport } from './routes/api/isabella-learning'
+import { Route as ApiIsabellaSkillsRouteImport } from './routes/api/isabella-skills'
 import { Route as ApiIsabellaVoiceRouteImport } from './routes/api/isabella-voice'
+import { Route as ApiMuxIntroRouteImport } from './routes/api/mux-intro'
+import { Route as ApiObservabilityRouteImport } from './routes/api/observability'
 import { Route as ApiSecurityRouteImport } from './routes/api/security'
+import { Route as ApiAiTransparencyRouteImport } from './routes/api/ai/transparency'
+import { Route as ApiConnectGithubRouteImport } from './routes/api/connect/github'
+import { Route as ApiConnectLinearRouteImport } from './routes/api/connect/linear'
+import { Route as ApiConnectSlackRouteImport } from './routes/api/connect/slack'
+import { Route as ApiHealthDeepRouteImport } from './routes/api/health/deep'
+import { Route as ApiHealthLiveRouteImport } from './routes/api/health/live'
+import { Route as ApiHealthReadyRouteImport } from './routes/api/health/ready'
+import { Route as ApiIsabellaNativeRouteImport } from './routes/api/isabella.native'
+import { Route as ApiV1IsabellaRouteImport } from './routes/api/v1/isabella'
+import { Route as ApiConnectGithubCallbackRouteImport } from './routes/api/connect/github/callback'
+import { Route as ApiConnectGithubWebhookRouteImport } from './routes/api/connect/github/webhook'
+import { Route as ApiConnectLinearCallbackRouteImport } from './routes/api/connect/linear/callback'
+import { Route as ApiConnectLinearWebhookRouteImport } from './routes/api/connect/linear/webhook'
+import { Route as ApiConnectSlackCallbackRouteImport } from './routes/api/connect/slack/callback'
+import { Route as ApiConnectSlackWebhookRouteImport } from './routes/api/connect/slack/webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -33,6 +56,11 @@ const PakeRoute = PakeRouteImport.update({
 const ApiBillingRoute = ApiBillingRouteImport.update({
   id: '/api/billing',
   path: '/api/billing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBillingTopupIntentRoute = ApiBillingTopupIntentRouteImport.update({
+  id: '/api/billing-topup-intent',
+  path: '/api/billing-topup-intent',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCatalogRoute = ApiCatalogRouteImport.update({
@@ -55,9 +83,35 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiIgdsRoute = ApiIgdsRouteImport.update({
+  id: '/api/igds',
+  path: '/api/igds',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIntelligenceRoute = ApiIntelligenceRouteImport.update({
+  id: '/api/intelligence',
+  path: '/api/intelligence',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIsabellaRoute = ApiIsabellaRouteImport.update({
   id: '/api/isabella',
   path: '/api/isabella',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIsabellaCognitiveTrainingRoute =
+  ApiIsabellaCognitiveTrainingRouteImport.update({
+    id: '/api/isabella-cognitive-training',
+    path: '/api/isabella-cognitive-training',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiIsabellaLearningRoute = ApiIsabellaLearningRouteImport.update({
+  id: '/api/isabella-learning',
+  path: '/api/isabella-learning',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIsabellaSkillsRoute = ApiIsabellaSkillsRouteImport.update({
+  id: '/api/isabella-skills',
+  path: '/api/isabella-skills',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIsabellaVoiceRoute = ApiIsabellaVoiceRouteImport.update({
@@ -65,48 +119,204 @@ const ApiIsabellaVoiceRoute = ApiIsabellaVoiceRouteImport.update({
   path: '/api/isabella-voice',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMuxIntroRoute = ApiMuxIntroRouteImport.update({
+  id: '/api/mux-intro',
+  path: '/api/mux-intro',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiObservabilityRoute = ApiObservabilityRouteImport.update({
+  id: '/api/observability',
+  path: '/api/observability',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSecurityRoute = ApiSecurityRouteImport.update({
   id: '/api/security',
   path: '/api/security',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiTransparencyRoute = ApiAiTransparencyRouteImport.update({
+  id: '/api/ai/transparency',
+  path: '/api/ai/transparency',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiConnectGithubRoute = ApiConnectGithubRouteImport.update({
+  id: '/api/connect/github',
+  path: '/api/connect/github',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiConnectLinearRoute = ApiConnectLinearRouteImport.update({
+  id: '/api/connect/linear',
+  path: '/api/connect/linear',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiConnectSlackRoute = ApiConnectSlackRouteImport.update({
+  id: '/api/connect/slack',
+  path: '/api/connect/slack',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthDeepRoute = ApiHealthDeepRouteImport.update({
+  id: '/deep',
+  path: '/deep',
+  getParentRoute: () => ApiHealthRoute,
+} as any)
+const ApiHealthLiveRoute = ApiHealthLiveRouteImport.update({
+  id: '/live',
+  path: '/live',
+  getParentRoute: () => ApiHealthRoute,
+} as any)
+const ApiHealthReadyRoute = ApiHealthReadyRouteImport.update({
+  id: '/ready',
+  path: '/ready',
+  getParentRoute: () => ApiHealthRoute,
+} as any)
+const ApiIsabellaNativeRoute = ApiIsabellaNativeRouteImport.update({
+  id: '/native',
+  path: '/native',
+  getParentRoute: () => ApiIsabellaRoute,
+} as any)
+const ApiV1IsabellaRoute = ApiV1IsabellaRouteImport.update({
+  id: '/api/v1/isabella',
+  path: '/api/v1/isabella',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiConnectGithubCallbackRoute =
+  ApiConnectGithubCallbackRouteImport.update({
+    id: '/callback',
+    path: '/callback',
+    getParentRoute: () => ApiConnectGithubRoute,
+  } as any)
+const ApiConnectGithubWebhookRoute = ApiConnectGithubWebhookRouteImport.update({
+  id: '/webhook',
+  path: '/webhook',
+  getParentRoute: () => ApiConnectGithubRoute,
+} as any)
+const ApiConnectLinearCallbackRoute =
+  ApiConnectLinearCallbackRouteImport.update({
+    id: '/callback',
+    path: '/callback',
+    getParentRoute: () => ApiConnectLinearRoute,
+  } as any)
+const ApiConnectLinearWebhookRoute = ApiConnectLinearWebhookRouteImport.update({
+  id: '/webhook',
+  path: '/webhook',
+  getParentRoute: () => ApiConnectLinearRoute,
+} as any)
+const ApiConnectSlackCallbackRoute = ApiConnectSlackCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => ApiConnectSlackRoute,
+} as any)
+const ApiConnectSlackWebhookRoute = ApiConnectSlackWebhookRouteImport.update({
+  id: '/webhook',
+  path: '/webhook',
+  getParentRoute: () => ApiConnectSlackRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/pake': typeof PakeRoute
   '/api/billing': typeof ApiBillingRoute
+  '/api/billing-topup-intent': typeof ApiBillingTopupIntentRoute
   '/api/catalog': typeof ApiCatalogRoute
   '/api/db': typeof ApiDbRoute
   '/api/economic-integrity': typeof ApiEconomicIntegrityRoute
-  '/api/health': typeof ApiHealthRoute
-  '/api/isabella': typeof ApiIsabellaRoute
+  '/api/health': typeof ApiHealthRouteWithChildren
+  '/api/igds': typeof ApiIgdsRoute
+  '/api/intelligence': typeof ApiIntelligenceRoute
+  '/api/isabella': typeof ApiIsabellaRouteWithChildren
+  '/api/isabella-cognitive-training': typeof ApiIsabellaCognitiveTrainingRoute
+  '/api/isabella-learning': typeof ApiIsabellaLearningRoute
+  '/api/isabella-skills': typeof ApiIsabellaSkillsRoute
   '/api/isabella-voice': typeof ApiIsabellaVoiceRoute
+  '/api/mux-intro': typeof ApiMuxIntroRoute
+  '/api/observability': typeof ApiObservabilityRoute
   '/api/security': typeof ApiSecurityRoute
+  '/api/ai/transparency': typeof ApiAiTransparencyRoute
+  '/api/connect/github': typeof ApiConnectGithubRouteWithChildren
+  '/api/connect/linear': typeof ApiConnectLinearRouteWithChildren
+  '/api/connect/slack': typeof ApiConnectSlackRouteWithChildren
+  '/api/health/deep': typeof ApiHealthDeepRoute
+  '/api/health/live': typeof ApiHealthLiveRoute
+  '/api/health/ready': typeof ApiHealthReadyRoute
+  '/api/isabella/native': typeof ApiIsabellaNativeRoute
+  '/api/v1/isabella': typeof ApiV1IsabellaRoute
+  '/api/connect/github/callback': typeof ApiConnectGithubCallbackRoute
+  '/api/connect/github/webhook': typeof ApiConnectGithubWebhookRoute
+  '/api/connect/linear/callback': typeof ApiConnectLinearCallbackRoute
+  '/api/connect/linear/webhook': typeof ApiConnectLinearWebhookRoute
+  '/api/connect/slack/callback': typeof ApiConnectSlackCallbackRoute
+  '/api/connect/slack/webhook': typeof ApiConnectSlackWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/pake': typeof PakeRoute
   '/api/billing': typeof ApiBillingRoute
+  '/api/billing-topup-intent': typeof ApiBillingTopupIntentRoute
   '/api/catalog': typeof ApiCatalogRoute
   '/api/db': typeof ApiDbRoute
   '/api/economic-integrity': typeof ApiEconomicIntegrityRoute
-  '/api/health': typeof ApiHealthRoute
-  '/api/isabella': typeof ApiIsabellaRoute
+  '/api/health': typeof ApiHealthRouteWithChildren
+  '/api/igds': typeof ApiIgdsRoute
+  '/api/intelligence': typeof ApiIntelligenceRoute
+  '/api/isabella': typeof ApiIsabellaRouteWithChildren
+  '/api/isabella-cognitive-training': typeof ApiIsabellaCognitiveTrainingRoute
+  '/api/isabella-learning': typeof ApiIsabellaLearningRoute
+  '/api/isabella-skills': typeof ApiIsabellaSkillsRoute
   '/api/isabella-voice': typeof ApiIsabellaVoiceRoute
+  '/api/mux-intro': typeof ApiMuxIntroRoute
+  '/api/observability': typeof ApiObservabilityRoute
   '/api/security': typeof ApiSecurityRoute
+  '/api/ai/transparency': typeof ApiAiTransparencyRoute
+  '/api/connect/github': typeof ApiConnectGithubRouteWithChildren
+  '/api/connect/linear': typeof ApiConnectLinearRouteWithChildren
+  '/api/connect/slack': typeof ApiConnectSlackRouteWithChildren
+  '/api/health/deep': typeof ApiHealthDeepRoute
+  '/api/health/live': typeof ApiHealthLiveRoute
+  '/api/health/ready': typeof ApiHealthReadyRoute
+  '/api/isabella/native': typeof ApiIsabellaNativeRoute
+  '/api/v1/isabella': typeof ApiV1IsabellaRoute
+  '/api/connect/github/callback': typeof ApiConnectGithubCallbackRoute
+  '/api/connect/github/webhook': typeof ApiConnectGithubWebhookRoute
+  '/api/connect/linear/callback': typeof ApiConnectLinearCallbackRoute
+  '/api/connect/linear/webhook': typeof ApiConnectLinearWebhookRoute
+  '/api/connect/slack/callback': typeof ApiConnectSlackCallbackRoute
+  '/api/connect/slack/webhook': typeof ApiConnectSlackWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/pake': typeof PakeRoute
   '/api/billing': typeof ApiBillingRoute
+  '/api/billing-topup-intent': typeof ApiBillingTopupIntentRoute
   '/api/catalog': typeof ApiCatalogRoute
   '/api/db': typeof ApiDbRoute
   '/api/economic-integrity': typeof ApiEconomicIntegrityRoute
-  '/api/health': typeof ApiHealthRoute
-  '/api/isabella': typeof ApiIsabellaRoute
+  '/api/health': typeof ApiHealthRouteWithChildren
+  '/api/igds': typeof ApiIgdsRoute
+  '/api/intelligence': typeof ApiIntelligenceRoute
+  '/api/isabella': typeof ApiIsabellaRouteWithChildren
+  '/api/isabella-cognitive-training': typeof ApiIsabellaCognitiveTrainingRoute
+  '/api/isabella-learning': typeof ApiIsabellaLearningRoute
+  '/api/isabella-skills': typeof ApiIsabellaSkillsRoute
   '/api/isabella-voice': typeof ApiIsabellaVoiceRoute
+  '/api/mux-intro': typeof ApiMuxIntroRoute
+  '/api/observability': typeof ApiObservabilityRoute
   '/api/security': typeof ApiSecurityRoute
+  '/api/ai/transparency': typeof ApiAiTransparencyRoute
+  '/api/connect/github': typeof ApiConnectGithubRouteWithChildren
+  '/api/connect/linear': typeof ApiConnectLinearRouteWithChildren
+  '/api/connect/slack': typeof ApiConnectSlackRouteWithChildren
+  '/api/health/deep': typeof ApiHealthDeepRoute
+  '/api/health/live': typeof ApiHealthLiveRoute
+  '/api/health/ready': typeof ApiHealthReadyRoute
+  '/api/isabella/native': typeof ApiIsabellaNativeRoute
+  '/api/v1/isabella': typeof ApiV1IsabellaRoute
+  '/api/connect/github/callback': typeof ApiConnectGithubCallbackRoute
+  '/api/connect/github/webhook': typeof ApiConnectGithubWebhookRoute
+  '/api/connect/linear/callback': typeof ApiConnectLinearCallbackRoute
+  '/api/connect/linear/webhook': typeof ApiConnectLinearWebhookRoute
+  '/api/connect/slack/callback': typeof ApiConnectSlackCallbackRoute
+  '/api/connect/slack/webhook': typeof ApiConnectSlackWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -114,50 +324,132 @@ export interface FileRouteTypes {
     | '/'
     | '/pake'
     | '/api/billing'
+    | '/api/billing-topup-intent'
     | '/api/catalog'
     | '/api/db'
     | '/api/economic-integrity'
     | '/api/health'
+    | '/api/igds'
+    | '/api/intelligence'
     | '/api/isabella'
+    | '/api/isabella-cognitive-training'
+    | '/api/isabella-learning'
+    | '/api/isabella-skills'
     | '/api/isabella-voice'
+    | '/api/mux-intro'
+    | '/api/observability'
     | '/api/security'
+    | '/api/ai/transparency'
+    | '/api/connect/github'
+    | '/api/connect/linear'
+    | '/api/connect/slack'
+    | '/api/health/deep'
+    | '/api/health/live'
+    | '/api/health/ready'
+    | '/api/isabella/native'
+    | '/api/v1/isabella'
+    | '/api/connect/github/callback'
+    | '/api/connect/github/webhook'
+    | '/api/connect/linear/callback'
+    | '/api/connect/linear/webhook'
+    | '/api/connect/slack/callback'
+    | '/api/connect/slack/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/pake'
     | '/api/billing'
+    | '/api/billing-topup-intent'
     | '/api/catalog'
     | '/api/db'
     | '/api/economic-integrity'
     | '/api/health'
+    | '/api/igds'
+    | '/api/intelligence'
     | '/api/isabella'
+    | '/api/isabella-cognitive-training'
+    | '/api/isabella-learning'
+    | '/api/isabella-skills'
     | '/api/isabella-voice'
+    | '/api/mux-intro'
+    | '/api/observability'
     | '/api/security'
+    | '/api/ai/transparency'
+    | '/api/connect/github'
+    | '/api/connect/linear'
+    | '/api/connect/slack'
+    | '/api/health/deep'
+    | '/api/health/live'
+    | '/api/health/ready'
+    | '/api/isabella/native'
+    | '/api/v1/isabella'
+    | '/api/connect/github/callback'
+    | '/api/connect/github/webhook'
+    | '/api/connect/linear/callback'
+    | '/api/connect/linear/webhook'
+    | '/api/connect/slack/callback'
+    | '/api/connect/slack/webhook'
   id:
     | '__root__'
     | '/'
     | '/pake'
     | '/api/billing'
+    | '/api/billing-topup-intent'
     | '/api/catalog'
     | '/api/db'
     | '/api/economic-integrity'
     | '/api/health'
+    | '/api/igds'
+    | '/api/intelligence'
     | '/api/isabella'
+    | '/api/isabella-cognitive-training'
+    | '/api/isabella-learning'
+    | '/api/isabella-skills'
     | '/api/isabella-voice'
+    | '/api/mux-intro'
+    | '/api/observability'
     | '/api/security'
+    | '/api/ai/transparency'
+    | '/api/connect/github'
+    | '/api/connect/linear'
+    | '/api/connect/slack'
+    | '/api/health/deep'
+    | '/api/health/live'
+    | '/api/health/ready'
+    | '/api/isabella/native'
+    | '/api/v1/isabella'
+    | '/api/connect/github/callback'
+    | '/api/connect/github/webhook'
+    | '/api/connect/linear/callback'
+    | '/api/connect/linear/webhook'
+    | '/api/connect/slack/callback'
+    | '/api/connect/slack/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PakeRoute: typeof PakeRoute
   ApiBillingRoute: typeof ApiBillingRoute
+  ApiBillingTopupIntentRoute: typeof ApiBillingTopupIntentRoute
   ApiCatalogRoute: typeof ApiCatalogRoute
   ApiDbRoute: typeof ApiDbRoute
   ApiEconomicIntegrityRoute: typeof ApiEconomicIntegrityRoute
-  ApiHealthRoute: typeof ApiHealthRoute
-  ApiIsabellaRoute: typeof ApiIsabellaRoute
+  ApiHealthRoute: typeof ApiHealthRouteWithChildren
+  ApiIgdsRoute: typeof ApiIgdsRoute
+  ApiIntelligenceRoute: typeof ApiIntelligenceRoute
+  ApiIsabellaRoute: typeof ApiIsabellaRouteWithChildren
+  ApiIsabellaCognitiveTrainingRoute: typeof ApiIsabellaCognitiveTrainingRoute
+  ApiIsabellaLearningRoute: typeof ApiIsabellaLearningRoute
+  ApiIsabellaSkillsRoute: typeof ApiIsabellaSkillsRoute
   ApiIsabellaVoiceRoute: typeof ApiIsabellaVoiceRoute
+  ApiMuxIntroRoute: typeof ApiMuxIntroRoute
+  ApiObservabilityRoute: typeof ApiObservabilityRoute
   ApiSecurityRoute: typeof ApiSecurityRoute
+  ApiAiTransparencyRoute: typeof ApiAiTransparencyRoute
+  ApiConnectGithubRoute: typeof ApiConnectGithubRouteWithChildren
+  ApiConnectLinearRoute: typeof ApiConnectLinearRouteWithChildren
+  ApiConnectSlackRoute: typeof ApiConnectSlackRouteWithChildren
+  ApiV1IsabellaRoute: typeof ApiV1IsabellaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -181,6 +473,13 @@ declare module '@tanstack/react-router' {
       path: '/api/billing'
       fullPath: '/api/billing'
       preLoaderRoute: typeof ApiBillingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/billing-topup-intent': {
+      id: '/api/billing-topup-intent'
+      path: '/api/billing-topup-intent'
+      fullPath: '/api/billing-topup-intent'
+      preLoaderRoute: typeof ApiBillingTopupIntentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/catalog': {
@@ -211,11 +510,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/igds': {
+      id: '/api/igds'
+      path: '/api/igds'
+      fullPath: '/api/igds'
+      preLoaderRoute: typeof ApiIgdsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/intelligence': {
+      id: '/api/intelligence'
+      path: '/api/intelligence'
+      fullPath: '/api/intelligence'
+      preLoaderRoute: typeof ApiIntelligenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/isabella': {
       id: '/api/isabella'
       path: '/api/isabella'
       fullPath: '/api/isabella'
       preLoaderRoute: typeof ApiIsabellaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/isabella-cognitive-training': {
+      id: '/api/isabella-cognitive-training'
+      path: '/api/isabella-cognitive-training'
+      fullPath: '/api/isabella-cognitive-training'
+      preLoaderRoute: typeof ApiIsabellaCognitiveTrainingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/isabella-learning': {
+      id: '/api/isabella-learning'
+      path: '/api/isabella-learning'
+      fullPath: '/api/isabella-learning'
+      preLoaderRoute: typeof ApiIsabellaLearningRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/isabella-skills': {
+      id: '/api/isabella-skills'
+      path: '/api/isabella-skills'
+      fullPath: '/api/isabella-skills'
+      preLoaderRoute: typeof ApiIsabellaSkillsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/isabella-voice': {
@@ -225,6 +559,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiIsabellaVoiceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mux-intro': {
+      id: '/api/mux-intro'
+      path: '/api/mux-intro'
+      fullPath: '/api/mux-intro'
+      preLoaderRoute: typeof ApiMuxIntroRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/observability': {
+      id: '/api/observability'
+      path: '/api/observability'
+      fullPath: '/api/observability'
+      preLoaderRoute: typeof ApiObservabilityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/security': {
       id: '/api/security'
       path: '/api/security'
@@ -232,20 +580,206 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSecurityRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ai/transparency': {
+      id: '/api/ai/transparency'
+      path: '/api/ai/transparency'
+      fullPath: '/api/ai/transparency'
+      preLoaderRoute: typeof ApiAiTransparencyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/connect/github': {
+      id: '/api/connect/github'
+      path: '/api/connect/github'
+      fullPath: '/api/connect/github'
+      preLoaderRoute: typeof ApiConnectGithubRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/connect/linear': {
+      id: '/api/connect/linear'
+      path: '/api/connect/linear'
+      fullPath: '/api/connect/linear'
+      preLoaderRoute: typeof ApiConnectLinearRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/connect/slack': {
+      id: '/api/connect/slack'
+      path: '/api/connect/slack'
+      fullPath: '/api/connect/slack'
+      preLoaderRoute: typeof ApiConnectSlackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health/deep': {
+      id: '/api/health/deep'
+      path: '/deep'
+      fullPath: '/api/health/deep'
+      preLoaderRoute: typeof ApiHealthDeepRouteImport
+      parentRoute: typeof ApiHealthRoute
+    }
+    '/api/health/live': {
+      id: '/api/health/live'
+      path: '/live'
+      fullPath: '/api/health/live'
+      preLoaderRoute: typeof ApiHealthLiveRouteImport
+      parentRoute: typeof ApiHealthRoute
+    }
+    '/api/health/ready': {
+      id: '/api/health/ready'
+      path: '/ready'
+      fullPath: '/api/health/ready'
+      preLoaderRoute: typeof ApiHealthReadyRouteImport
+      parentRoute: typeof ApiHealthRoute
+    }
+    '/api/isabella/native': {
+      id: '/api/isabella/native'
+      path: '/native'
+      fullPath: '/api/isabella/native'
+      preLoaderRoute: typeof ApiIsabellaNativeRouteImport
+      parentRoute: typeof ApiIsabellaRoute
+    }
+    '/api/v1/isabella': {
+      id: '/api/v1/isabella'
+      path: '/api/v1/isabella'
+      fullPath: '/api/v1/isabella'
+      preLoaderRoute: typeof ApiV1IsabellaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/connect/github/callback': {
+      id: '/api/connect/github/callback'
+      path: '/callback'
+      fullPath: '/api/connect/github/callback'
+      preLoaderRoute: typeof ApiConnectGithubCallbackRouteImport
+      parentRoute: typeof ApiConnectGithubRoute
+    }
+    '/api/connect/github/webhook': {
+      id: '/api/connect/github/webhook'
+      path: '/webhook'
+      fullPath: '/api/connect/github/webhook'
+      preLoaderRoute: typeof ApiConnectGithubWebhookRouteImport
+      parentRoute: typeof ApiConnectGithubRoute
+    }
+    '/api/connect/linear/callback': {
+      id: '/api/connect/linear/callback'
+      path: '/callback'
+      fullPath: '/api/connect/linear/callback'
+      preLoaderRoute: typeof ApiConnectLinearCallbackRouteImport
+      parentRoute: typeof ApiConnectLinearRoute
+    }
+    '/api/connect/linear/webhook': {
+      id: '/api/connect/linear/webhook'
+      path: '/webhook'
+      fullPath: '/api/connect/linear/webhook'
+      preLoaderRoute: typeof ApiConnectLinearWebhookRouteImport
+      parentRoute: typeof ApiConnectLinearRoute
+    }
+    '/api/connect/slack/callback': {
+      id: '/api/connect/slack/callback'
+      path: '/callback'
+      fullPath: '/api/connect/slack/callback'
+      preLoaderRoute: typeof ApiConnectSlackCallbackRouteImport
+      parentRoute: typeof ApiConnectSlackRoute
+    }
+    '/api/connect/slack/webhook': {
+      id: '/api/connect/slack/webhook'
+      path: '/webhook'
+      fullPath: '/api/connect/slack/webhook'
+      preLoaderRoute: typeof ApiConnectSlackWebhookRouteImport
+      parentRoute: typeof ApiConnectSlackRoute
+    }
   }
 }
+
+interface ApiHealthRouteChildren {
+  ApiHealthDeepRoute: typeof ApiHealthDeepRoute
+  ApiHealthLiveRoute: typeof ApiHealthLiveRoute
+  ApiHealthReadyRoute: typeof ApiHealthReadyRoute
+}
+
+const ApiHealthRouteChildren: ApiHealthRouteChildren = {
+  ApiHealthDeepRoute: ApiHealthDeepRoute,
+  ApiHealthLiveRoute: ApiHealthLiveRoute,
+  ApiHealthReadyRoute: ApiHealthReadyRoute,
+}
+
+const ApiHealthRouteWithChildren = ApiHealthRoute._addFileChildren(
+  ApiHealthRouteChildren,
+)
+
+interface ApiIsabellaRouteChildren {
+  ApiIsabellaNativeRoute: typeof ApiIsabellaNativeRoute
+}
+
+const ApiIsabellaRouteChildren: ApiIsabellaRouteChildren = {
+  ApiIsabellaNativeRoute: ApiIsabellaNativeRoute,
+}
+
+const ApiIsabellaRouteWithChildren = ApiIsabellaRoute._addFileChildren(
+  ApiIsabellaRouteChildren,
+)
+
+interface ApiConnectGithubRouteChildren {
+  ApiConnectGithubCallbackRoute: typeof ApiConnectGithubCallbackRoute
+  ApiConnectGithubWebhookRoute: typeof ApiConnectGithubWebhookRoute
+}
+
+const ApiConnectGithubRouteChildren: ApiConnectGithubRouteChildren = {
+  ApiConnectGithubCallbackRoute: ApiConnectGithubCallbackRoute,
+  ApiConnectGithubWebhookRoute: ApiConnectGithubWebhookRoute,
+}
+
+const ApiConnectGithubRouteWithChildren =
+  ApiConnectGithubRoute._addFileChildren(ApiConnectGithubRouteChildren)
+
+interface ApiConnectLinearRouteChildren {
+  ApiConnectLinearCallbackRoute: typeof ApiConnectLinearCallbackRoute
+  ApiConnectLinearWebhookRoute: typeof ApiConnectLinearWebhookRoute
+}
+
+const ApiConnectLinearRouteChildren: ApiConnectLinearRouteChildren = {
+  ApiConnectLinearCallbackRoute: ApiConnectLinearCallbackRoute,
+  ApiConnectLinearWebhookRoute: ApiConnectLinearWebhookRoute,
+}
+
+const ApiConnectLinearRouteWithChildren =
+  ApiConnectLinearRoute._addFileChildren(ApiConnectLinearRouteChildren)
+
+interface ApiConnectSlackRouteChildren {
+  ApiConnectSlackCallbackRoute: typeof ApiConnectSlackCallbackRoute
+  ApiConnectSlackWebhookRoute: typeof ApiConnectSlackWebhookRoute
+}
+
+const ApiConnectSlackRouteChildren: ApiConnectSlackRouteChildren = {
+  ApiConnectSlackCallbackRoute: ApiConnectSlackCallbackRoute,
+  ApiConnectSlackWebhookRoute: ApiConnectSlackWebhookRoute,
+}
+
+const ApiConnectSlackRouteWithChildren = ApiConnectSlackRoute._addFileChildren(
+  ApiConnectSlackRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PakeRoute: PakeRoute,
   ApiBillingRoute: ApiBillingRoute,
+  ApiBillingTopupIntentRoute: ApiBillingTopupIntentRoute,
   ApiCatalogRoute: ApiCatalogRoute,
   ApiDbRoute: ApiDbRoute,
   ApiEconomicIntegrityRoute: ApiEconomicIntegrityRoute,
-  ApiHealthRoute: ApiHealthRoute,
-  ApiIsabellaRoute: ApiIsabellaRoute,
+  ApiHealthRoute: ApiHealthRouteWithChildren,
+  ApiIgdsRoute: ApiIgdsRoute,
+  ApiIntelligenceRoute: ApiIntelligenceRoute,
+  ApiIsabellaRoute: ApiIsabellaRouteWithChildren,
+  ApiIsabellaCognitiveTrainingRoute: ApiIsabellaCognitiveTrainingRoute,
+  ApiIsabellaLearningRoute: ApiIsabellaLearningRoute,
+  ApiIsabellaSkillsRoute: ApiIsabellaSkillsRoute,
   ApiIsabellaVoiceRoute: ApiIsabellaVoiceRoute,
+  ApiMuxIntroRoute: ApiMuxIntroRoute,
+  ApiObservabilityRoute: ApiObservabilityRoute,
   ApiSecurityRoute: ApiSecurityRoute,
+  ApiAiTransparencyRoute: ApiAiTransparencyRoute,
+  ApiConnectGithubRoute: ApiConnectGithubRouteWithChildren,
+  ApiConnectLinearRoute: ApiConnectLinearRouteWithChildren,
+  ApiConnectSlackRoute: ApiConnectSlackRouteWithChildren,
+  ApiV1IsabellaRoute: ApiV1IsabellaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

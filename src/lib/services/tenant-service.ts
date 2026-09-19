@@ -66,7 +66,11 @@ export class TenantService {
       severity: "S3",
       actor: command.createdBy,
       result: "success",
-      details: { tenantId: command.id, slug: command.slug, createdBy: command.createdBy },
+      details: {
+        tenantId: command.id,
+        slug: command.slug,
+        createdBy: command.createdBy,
+      },
     });
 
     return mapTenantRowToDomain({

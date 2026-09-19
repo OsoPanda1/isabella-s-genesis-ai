@@ -11,7 +11,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 describe("política de inferencia", () => {
   it("con proveedor opera normal sin degradación", async () => {
     const { resolveInferencePolicy } = await import("@/lib/inference-policy");
-    const decision = resolveInferencePolicy({ productionLike: true, hasProvider: true });
+    const decision = resolveInferencePolicy({
+      productionLike: true,
+      hasProvider: true,
+    });
     expect(decision.mode).toBe("PRODUCTION_NORMAL");
     expect(decision.degraded).toBe(false);
     expect(decision.httpStatus).toBe(200);
@@ -19,7 +22,10 @@ describe("política de inferencia", () => {
 
   it("sin proveedor en producción falla a mantenimiento 503", async () => {
     const { resolveInferencePolicy } = await import("@/lib/inference-policy");
-    const decision = resolveInferencePolicy({ productionLike: true, hasProvider: false });
+    const decision = resolveInferencePolicy({
+      productionLike: true,
+      hasProvider: false,
+    });
     expect(decision.mode).toBe("MAINTENANCE");
     expect(decision.httpStatus).toBe(503);
     expect(decision.errorCode).toBe("inference_unavailable");
@@ -28,7 +34,10 @@ describe("política de inferencia", () => {
 
   it("sin proveedor en desarrollo declara nativo (no finge LLM)", async () => {
     const { resolveInferencePolicy } = await import("@/lib/inference-policy");
-    const decision = resolveInferencePolicy({ productionLike: false, hasProvider: false });
+    const decision = resolveInferencePolicy({
+      productionLike: false,
+      hasProvider: false,
+    });
     expect(decision.mode).toBe("NATIVE_DECLARED");
     expect(decision.provider).toBe("native-fallback");
     expect(decision.degraded).toBe(true);
@@ -85,7 +94,14 @@ describe("production authority (6 autoridades)", () => {
   it("en producción completa no aborta y todo está ok", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("ISABELLA_RUNTIME_MODE", "production");
+    vi.stubEnv("ISABELLA_STORAGE_PROVIDER", "postgres");
+    // Blindar contra .env.local del desarrollador (Vite lo carga en proceso).
+    vi.stubEnv("AUTH_DEV_SESSION_ENABLED", "false");
+    vi.stubEnv("ALLOW_GUEST_CHAT", "false");
+    vi.stubEnv("DURABLE_JSON_ALLOWED", "false");
     vi.stubEnv("PUBLIC_URL", "https://isabella.example.com");
+    vi.stubEnv("DATABASE_URL", "postgres://user:pass@localhost:5432/isabella");
+    vi.stubEnv("ISABELLA_STORAGE_PROVIDER", "postgres");
     vi.stubEnv("SUPABASE_URL", "https://xyz.supabase.co");
     vi.stubEnv("SUPABASE_ANON_KEY", "anon-key-value");
     vi.stubEnv("AUTH_JWT_SECRET", "0123456789abcdef0123456789abcdef");
@@ -96,6 +112,9 @@ describe("production authority (6 autoridades)", () => {
     vi.stubEnv("BOOKPI_SIGNING_KEY", "0123456789abcdef0123456789abcdef");
     vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_1234567890abcdef");
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test_1234567890");
+    vi.stubEnv("PROVISION_OWNER_TOKEN", "provision-owner-test-token");
+    vi.stubEnv("ISABELLA_STORAGE_PROVIDER", "postgres");
+    vi.stubEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://otel.example.com");
     const { resetConfigCache } = await import("@/lib/config");
     resetConfigCache();
     const { assertProductionAuthorities } = await import("@/lib/production-authority");

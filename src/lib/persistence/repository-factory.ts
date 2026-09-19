@@ -8,10 +8,10 @@ import type {
   Session,
 } from "./repository";
 import { JsonRepositoryFactory } from "./adapters/json-adapter";
-import { SupabaseRepository } from "./adapters/supabase-adapter";
+import { NeonRepository } from "./adapters/neon-adapter";
 
 class ProductionRepositoryFactory implements RepositoryFactory {
-  private readonly supabaseFactory = new Map<string, IRepository<unknown>>();
+  private readonly neonFactory = new Map<string, IRepository<unknown>>();
   private readonly jsonFactory = new JsonRepositoryFactory();
 
   private isProduction(): boolean {
@@ -23,23 +23,19 @@ class ProductionRepositoryFactory implements RepositoryFactory {
         cfg.ISABELLA_RUNTIME_MODE === "staging"
       );
     } catch {
-      return process.env.NODE_ENV === "production";
+      return true;
     }
   }
 
   private isDurableJsonAllowed(): boolean {
     try {
       const cfg = config() as unknown as Record<string, unknown>;
-      // Explicit flag — defaults to false in production
       if (typeof cfg.DURABLE_JSON_ALLOWED === "boolean") return cfg.DURABLE_JSON_ALLOWED as boolean;
       if (typeof cfg.DURABLE_JSON_ALLOWED === "string")
         return (cfg.DURABLE_JSON_ALLOWED as string) === "true";
-    } catch (e) {
-      void e;
+    } catch {
+      // Ignored
     }
-    const raw = process.env.DURABLE_JSON_ALLOWED;
-    if (raw === "true") return true;
-    if (raw === "false") return false;
     return false;
   }
 
@@ -55,29 +51,47 @@ class ProductionRepositoryFactory implements RepositoryFactory {
     }
 
     const cfg = config();
-    const hasTenantScopedSupabase = Boolean(cfg.SUPABASE_URL && cfg.AUTH_JWT_SECRET);
     const hasPostgres = Boolean(cfg.DATABASE_URL);
 
-    if (!hasTenantScopedSupabase && !hasPostgres) {
+    if (!hasPostgres) {
       throw new Error(
-        "[FATAL] Production persistence misconfigured. Configure either tenant-scoped Supabase (SUPABASE_URL + AUTH_JWT_SECRET) or DATABASE_URL for the dedicated PostgreSQL authentication repositories.",
+        "[FATAL] Production persistence misconfigured. Configure DATABASE_URL for the dedicated PostgreSQL authoritative database. Supabase is Identity Provider only — not state authority.",
+      );
+    }
+
+    // Proveedor explícito (P0-5): una app financiera no debe decidir por
+    // presencia de variables ("tengo DATABASE_URL, entonces..."). Exige que
+    // ISABELLA_STORAGE_PROVIDER declare postgres|neon; json|supabase|memory
+    // son no autoritativos y quedan PROHIBIDOS en staging/production.
+    const provider = (cfg as unknown as Record<string, unknown>).ISABELLA_STORAGE_PROVIDER;
+    const normalized =
+      typeof provider === "string" ? (provider as string).trim().toLowerCase() : "";
+
+    if (!normalized) {
+      throw new Error(
+        "[FATAL] ISABELLA_STORAGE_PROVIDER must be explicitly set to postgres|neon in staging/production. Ambiguous or missing provider is a deployment blocker.",
+      );
+    }
+    if (!["postgres", "neon"].includes(normalized)) {
+      throw new Error(
+        `[FATAL] ISABELLA_STORAGE_PROVIDER="${normalized}" is not an authoritative durable provider in production. Allowed: postgres|neon.`,
       );
     }
   }
 
-  private getSupabaseRepo<T extends { id: string }>(type: string): IRepository<T> {
+  private getNeonRepo<T extends { id: string }>(type: string): IRepository<T> {
     this.assertProductionPersistence();
-    let repo = this.supabaseFactory.get(type) as IRepository<T> | undefined;
+    let repo = this.neonFactory.get(type) as IRepository<T> | undefined;
     if (!repo) {
-      repo = new SupabaseRepository<T>(type);
-      this.supabaseFactory.set(type, repo as IRepository<unknown>);
+      repo = new NeonRepository<T>(type);
+      this.neonFactory.set(type, repo as IRepository<unknown>);
     }
     return repo;
   }
 
-  getAdapter<T extends { id: string }>(type: "supabase" | "neon" | "redis"): IRepository<T> {
-    if (type === "supabase") return this.getSupabaseRepo<T>("supabase");
-    // Neon/redis not yet implemented — fail closed in production
+  getAdapter<T extends { id: string }>(type: "neon" | "redis"): IRepository<T> {
+    if (type === "neon") return this.getNeonRepo<T>("neon");
+    // redis not yet implemented — fail closed in production
     if (this.isProduction()) {
       throw new Error(
         `[FATAL] Adapter ${type} not implemented for production — deployment blocker`,
@@ -87,22 +101,22 @@ class ProductionRepositoryFactory implements RepositoryFactory {
   }
 
   getApiKeyRepository(): IRepository<ApiKey> {
-    if (this.isProduction()) return this.getSupabaseRepo<ApiKey>("apiKey");
+    if (this.isProduction()) return this.getNeonRepo<ApiKey>("apiKey");
     return this.jsonFactory.getApiKeyRepository();
   }
 
   getAuditRepository(): IRepository<AuditEntry> {
-    if (this.isProduction()) return this.getSupabaseRepo<AuditEntry>("audit");
+    if (this.isProduction()) return this.getNeonRepo<AuditEntry>("audit");
     return this.jsonFactory.getAuditRepository();
   }
 
   getTenantRepository(): IRepository<Tenant> {
-    if (this.isProduction()) return this.getSupabaseRepo<Tenant>("tenant");
+    if (this.isProduction()) return this.getNeonRepo<Tenant>("tenant");
     return this.jsonFactory.getTenantRepository();
   }
 
   getSessionRepository(): IRepository<Session> {
-    if (this.isProduction()) return this.getSupabaseRepo<Session>("session");
+    if (this.isProduction()) return this.getNeonRepo<Session>("session");
     return this.jsonFactory.getSessionRepository();
   }
 }
@@ -111,5 +125,5 @@ export const repositoryFactory: RepositoryFactory = new ProductionRepositoryFact
 
 // Legacy export for direct JSON access in dev/test only — not for production routes
 export { JsonRepositoryFactory } from "./adapters/json-adapter";
-export { SupabaseRepository } from "./adapters/supabase-adapter";
+export { NeonRepository } from "./adapters/neon-adapter";
 export { createBookpiPostgresRepository } from "../repositories/bookpi-postgres-repository";

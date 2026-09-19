@@ -60,18 +60,22 @@ export async function grantApprovalAsync(
   const approvalId = `apr_${randomUUID().replace(/-/g, "")}`;
   const expiresAt = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();
   const { rows } = await getPool().query(
-    `INSERT INTO approval_grants (approval_id, trace_id, tool, actor_id, tenant_id, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (trace_id, tool, actor_id, tenant_id) DO NOTHING
+    `INSERT INTO approval_grants (approval_id, trace_id, tool, actor_id, tenant_id, expires_at, consumed, consumed_at)
+     VALUES ($1, $2, $3, $4, $5, $6, FALSE, NULL)
+     ON CONFLICT (trace_id, tool, actor_id, tenant_id)
+     DO UPDATE SET
+       approval_id = EXCLUDED.approval_id,
+       granted_at = NOW(),
+       expires_at = EXCLUDED.expires_at,
+       consumed = FALSE,
+       consumed_at = NULL
      RETURNING *`,
     [approvalId, traceId, tool, actorId, tenantId, expiresAt],
   );
-  if (rows[0]) return mapRow(rows[0]);
-  const existing = await getPool().query(
-    `SELECT * FROM approval_grants WHERE trace_id = $1 AND tool = $2 AND actor_id = $3 AND tenant_id = $4 LIMIT 1`,
-    [traceId, tool, actorId, tenantId],
-  );
-  return mapRow(existing.rows[0]);
+  if (!rows[0]) {
+    throw new Error("APPROVAL_GRANT_FAILED: no se pudo persistir la aprobación.");
+  }
+  return mapRow(rows[0]);
 }
 
 /** Consumo atómico: exactamente un consumidor gana aunque haya carreras. */

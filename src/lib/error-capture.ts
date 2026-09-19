@@ -32,7 +32,10 @@ export function describeError(error: unknown): string {
 }
 
 function describeStatus(error: Error): string {
-  const { status, statusCode } = error as { status?: unknown; statusCode?: unknown };
+  const { status, statusCode } = error as {
+    status?: unknown;
+    statusCode?: unknown;
+  };
   const value = status ?? statusCode;
   return typeof value === "number" ? ` (status ${value})` : "";
 }

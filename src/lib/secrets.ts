@@ -6,19 +6,14 @@ import { EnvKMSProvider, type KMSProvider } from "./kms-provider";
  * -----------------------------------------------------------------
  * Nunca leas secretos desde `process.env` directamente: este módulo
  * centraliza su acceso y distingue secretos operativos de política.
- * 
+ *
  * P0 - MIGRACIÓN A PRODUCTION SECRETS MANAGER:
  * No hay hardcoded fallback keys permitidas (ej: 'dev-fallback-secret').
  * En producción se utiliza un KMSProvider.
  */
 
 export type SecretKind =
-  | "jwt"
-  | "encryption"
-  | "bookpi"
-  | "ai"
-  | "supabase-service"
-  | "policy-signing";
+  "jwt" | "encryption" | "bookpi" | "ai" | "supabase-service" | "policy-signing";
 
 export class SecretsManager {
   private readonly kms: KMSProvider;
@@ -27,15 +22,23 @@ export class SecretsManager {
   constructor(cfg: Env, kmsProvider?: KMSProvider) {
     this.cachedConfig = cfg;
     // Por defecto usa las variables de entorno como "KMS"
-    this.kms = kmsProvider ?? new EnvKMSProvider(cfg as unknown as Record<string, string | undefined>);
+    this.kms =
+      kmsProvider ?? new EnvKMSProvider(cfg as unknown as Record<string, string | undefined>);
   }
 
-  private async getActiveSecret(kind: SecretKind, keyName: keyof Env, label: string): Promise<string> {
+  private async getActiveSecret(
+    kind: SecretKind,
+    keyName: keyof Env,
+    label: string,
+  ): Promise<string> {
     // Si KMS lo tiene, úsalo (permitiendo rotación dinámica).
-    const secretValue = await this.kms.getSecret(keyName as string) ?? this.cachedConfig[keyName];
+    const secretValue = (await this.kms.getSecret(keyName as string)) ?? this.cachedConfig[keyName];
 
     if (!secretValue || String(secretValue).trim() === "") {
-      throw new Error(`[Zero Trust Secrets] Secreto requerido no configurado: ${label} (${kind}). No se admiten fallbacks locales.`);
+      throw new Error(
+        `[Zero Trust Secrets] Secreto requerido no configurado: ${label} (${kind}). No se admiten fallbacks locales.`,
+      );
+<<<<<<< Updated upstream
     }
 
     return String(secretValue);
@@ -45,7 +48,34 @@ export class SecretsManager {
     const secretValue = this.cachedConfig[keyName];
 
     if (!secretValue || String(secretValue).trim() === "") {
-      throw new Error(`[Zero Trust Secrets] Secreto requerido no configurado: ${label} (${kind}). No se admiten fallbacks locales.`);
+      throw new Error(
+        `[Zero Trust Secrets] Secreto requerido no configurado: ${label} (${kind}). No se admiten fallbacks locales.`,
+=======
+    },
+    bookpiSigningKey() {
+      const alg = cfg().BOOKPI_SIGNATURE_ALGORITHM;
+      if (alg === "NOT_IMPLEMENTED") return "";
+      return requireSecret("bookpi", cfg().BOOKPI_SIGNING_KEY, "BOOKPI_SIGNING_KEY");
+    },
+    aiGatewayKey() {
+      return cfg().GEMINI_API_KEY || requireSecret("ai", undefined, "GEMINI_API_KEY");
+    },
+    supabaseJwtSecret() {
+      return cfg().SUPABASE_JWT_SECRET;
+    },
+    policySigningKey() {
+      return cfg().CROWN_POLICY_SIGNING_KEY;
+    },
+    apiKeyHashSecret() {
+      // P0-APIKEYS: sin fallback a AUTH_JWT_SECRET. Derivar el HMAC de la llave
+      // de API desde el secreto de sesión reutiliza material criptográfico de
+      // alcance distinto; se exige una clave huésped dedicada (fail-closed).
+      return requireSecret(
+        "jwt",
+        cfg().API_KEY_HASH_SECRET,
+        "API_KEY_HASH_SECRET (dedicada; mín. 16 caracteres, sin derivar de AUTH_JWT_SECRET)",
+>>>>>>> Stashed changes
+      );
     }
 
     return String(secretValue);
@@ -58,27 +88,30 @@ export class SecretsManager {
   }
 
   encryptionMasterKey(): string {
-    return this.getActiveSecretSync("encryption", "ENCRYPTION_MASTER_KEY", "ENCRYPTION_MASTER_KEY (mín. 32 caracteres)");
+    return this.getActiveSecretSync(
+      "encryption",
+      "ENCRYPTION_MASTER_KEY",
+      "ENCRYPTION_MASTER_KEY (mín. 32 caracteres)",
+    );
   }
 
   bookpiSigningKey(): string {
     return this.getActiveSecretSync("bookpi", "BOOKPI_SIGNING_KEY", "BOOKPI_SIGNING_KEY");
   }
 
-  /**
-   * Clave de la puerta cognitiva. Prioriza la puerta soberana de Lovable
-   * (compatible OpenAI) y admite Gemini directo como proveedor alterno.
-   */
   aiGatewayKey(): string {
-    const lovable = this.cachedConfig.LOVABLE_API_KEY;
-    if (lovable && String(lovable).trim() !== "") return String(lovable);
     return this.getActiveSecretSync("ai", "GEMINI_API_KEY", "GEMINI_API_KEY");
   }
 
-  /** Proveedor cognitivo activo, derivado de los secretos disponibles. */
-  aiProvider(): "lovable-gateway" | "gemini" {
-    const lovable = this.cachedConfig.LOVABLE_API_KEY;
-    return lovable && String(lovable).trim() !== "" ? "lovable-gateway" : "gemini";
+  optionalProviderKey(provider: "gemini" | "groq" | "xai"): string | undefined {
+    const keyName =
+      provider === "gemini"
+        ? "GEMINI_API_KEY"
+        : provider === "groq"
+          ? "GROQ_API_KEY"
+          : "XAI_API_KEY";
+    const value = this.cachedConfig[keyName];
+    return typeof value === "string" && value.trim() ? value : undefined;
   }
 
   aegisAuditSecret(): string {

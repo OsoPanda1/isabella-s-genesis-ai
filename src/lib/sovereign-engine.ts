@@ -4,6 +4,7 @@ import * as crypto from "node:crypto";
 import { Pool } from "pg";
 import { config } from "./config";
 import { SecuritySystem } from "./security";
+import { config } from "./config";
 import type { ApiKeyRecord } from "./credential-types";
 
 // ============================================================================
@@ -11,6 +12,25 @@ import type { ApiKeyRecord } from "./credential-types";
 // ============================================================================
 
 const PERSISTENCE_FILE_PATH = path.join(process.cwd(), "isabella_sovereign_db.json");
+
+/**
+ * FASE 7 — fail-closed: la persistencia JSON soberana es un mock de archivos.
+ * En staging/production se exige una fuente de verdad transaccional
+ * (PostgreSQL/Supabase). Mientras dure la transición, `DURABLE_JSON_ALLOWED=true`
+ * (mismo contrato que `json-adapter`) permite el JSON; al llegar `false`,
+ * el runtime NIEga la operación en vez de persistir en JSON silenciosamente.
+ * El end-state certificado es `DURABLE_JSON_ALLOWED=false` con repos Postgres.
+ */
+function assertJsonPersistenceAllowed(): void {
+  const cfg = config();
+  const isProdLike =
+    cfg.ISABELLA_RUNTIME_MODE === "production" || cfg.ISABELLA_RUNTIME_MODE === "staging";
+  if (isProdLike && cfg.DURABLE_JSON_ALLOWED !== true) {
+    throw new Error(
+      "JSON SovereignDB persistence is disabled in staging and production (FASE 7). Use the PostgreSQL/Supabase repository as source of truth.",
+    );
+  }
+}
 
 // 1. Core Cryptographic Chaining Schema (BookPI Ledger)
 export interface BookPILedgerBlock {
@@ -185,11 +205,29 @@ function isProductionRuntime(): boolean {
       cfg.ISABELLA_RUNTIME_MODE === "staging"
     );
   } catch {
-    return (
-      process.env.NODE_ENV === "production" || process.env.ISABELLA_RUNTIME_MODE === "production"
-    );
+    // Sin configuración válida: asumir producción (fail-closed).
+    return true;
   }
 }
+
+/**
+ * P0-B: estado soberano no durable en producción. Fail-closed: ante caída de
+ * PostgreSQL (o ausencia de DATABASE_URL) NUNCA se sirve memoria vacía ni se
+ * acepta una escritura que no será persistida. Server.ts lo mapea a 503.
+ */
+export class DurableStateUnavailableError extends Error {
+  readonly code = "SOVEREIGN_STATE_UNAVAILABLE";
+  constructor(message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = "DurableStateUnavailableError";
+  }
+}
+
+/**
+ * Error de la última persistencia fallida en producción. La siguiente operación
+ * (hydrate/save) lo relanza: una escritura fallida jamás queda silenciosa.
+ */
+let sovereignPersistError: Error | null = null;
 
 export class SovereignDB {
   /**
@@ -199,13 +237,32 @@ export class SovereignDB {
    * share one refresh. Mutating paths must request a fresh read (`maxAgeMs: 0`)
    * before a read-modify-write sequence.
    */
-  public static async hydrate({ maxAgeMs = 0 }: { maxAgeMs?: number } = {}): Promise<DatabaseSchema> {
+public static async hydrate({
+    maxAgeMs = 0,
+  }: { maxAgeMs?: number } = {}): Promise<DatabaseSchema> {
+    // Fail-closed: si la persistencia anterior falló, no servir estado obsoleto.
+    if (isProductionRuntime() && sovereignPersistError) {
+      throw new DurableStateUnavailableError(
+        "Sovereign state persistence failed previously; refusing to serve stale/empty state.",
+        sovereignPersistError,
+      );
+    }
     if (memoryDb && maxAgeMs > 0 && Date.now() - lastHydratedAt < maxAgeMs) {
       return memoryDb;
     }
     if (hydrationInFlight) return hydrationInFlight;
 
     hydrationInFlight = this.hydrateFresh();
+    try {
+      return await hydrationInFlight;
+    } finally {
+      hydrationInFlight = null;
+    }
+  }
+
+  public static load(): DatabaseSchema {
+    assertJsonPersistenceAllowed();
+>>>>>>> Stashed changes
     try {
       return await hydrationInFlight;
     } finally {
@@ -222,25 +279,28 @@ export class SovereignDB {
       return memoryDb;
     }
     const pool = getPgPool();
-    if (pool) {
-      try {
-        await ensureStateTable(pool);
-        const { rows } = await pool.query(
-          "SELECT payload FROM public.sovereign_state WHERE id = 'canonical' LIMIT 1",
-        );
-        if (rows[0]?.payload) {
-          memoryDb = rows[0].payload as DatabaseSchema;
-          lastHydratedAt = Date.now();
-          return memoryDb;
-        }
-      } catch (e) {
-        console.error("[SovereignDB] hydrate failed, using in-memory state:", e);
-      }
-    } else {
-      console.error(
-        "[SovereignDB] No DATABASE_URL in production — Sovereign state is not durable.",
+    if (!pool) {
+      throw new DurableStateUnavailableError(
+        "DATABASE_URL missing in production — Sovereign state cannot be durable (fail-closed).",
       );
     }
+    try {
+      await ensureStateTable(pool);
+      const { rows } = await pool.query(
+        "SELECT payload FROM public.sovereign_state WHERE id = 'canonical' LIMIT 1",
+      );
+      if (rows[0]?.payload) {
+        memoryDb = rows[0].payload as DatabaseSchema;
+        lastHydratedAt = Date.now();
+        return memoryDb;
+      }
+    } catch (e) {
+      throw new DurableStateUnavailableError(
+        "Failed to hydrate Sovereign state from PostgreSQL in production (fail-closed).",
+        e,
+      );
+    }
+    // Sin fila: despliegue reciente legítimo. Estado vacío, no un error.
     memoryDb = emptyDatabase();
     lastHydratedAt = Date.now();
     return memoryDb;
@@ -251,6 +311,7 @@ export class SovereignDB {
     memoryDb = null;
     lastHydratedAt = 0;
     hydrationInFlight = null;
+    sovereignPersistError = null;
   }
 
   /**
@@ -290,6 +351,7 @@ export class SovereignDB {
   }
 
   private static save(db: DatabaseSchema) {
+<<<<<<< Updated upstream
     memoryDb = db;
     lastHydratedAt = Date.now();
     const production = isProductionRuntime();
@@ -303,17 +365,25 @@ export class SovereignDB {
         fs.writeFileSync(PERSISTENCE_FILE_PATH, JSON.stringify(db, null, 2), "utf8");
       } catch (e) {
         console.error("Fallo crítico al escribir en la base de datos persistente:", e);
+=======
+    assertJsonPersistenceAllowed();
+    try {
+      const dir = path.dirname(PERSISTENCE_FILE_PATH);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+>>>>>>> Stashed changes
       }
       return;
     }
 
-    // Production: persist to PostgreSQL async (fire-and-forget with error log).
+    // Production: persist to PostgreSQL. Fail-closed: sin DATABASE_URL esta
+    // escritura NUNCA se acepta; con persist fallida se marca el error para
+    // que la siguiente operación falle (NUNCA silencioso).
     const pool = getPgPool();
     if (!pool) {
-      console.error(
-        "[SovereignDB] No DATABASE_URL in production — sovereign state write skipped (NOT durable).",
+      throw new DurableStateUnavailableError(
+        "DATABASE_URL missing in production — sovereign state write refused (NOT durable).",
       );
-      return;
     }
     const payload = JSON.stringify(db);
     const persist = async () => {
@@ -327,10 +397,14 @@ export class SovereignDB {
     };
     persist()
       .then(() => {
-        /* persisted */
+        sovereignPersistError = null;
       })
       .catch((e) => {
-        console.error("[SovereignDB] Failed to persist sovereign state to Postgres:", e);
+        sovereignPersistError = e instanceof Error ? e : new Error(String(e));
+        console.error(
+          "[SovereignDB] Failed to persist sovereign state to Postgres (fail-closed on next op):",
+          sovereignPersistError,
+        );
       });
   }
 
@@ -498,14 +572,20 @@ export class SovereignDB {
     const block = db.ledger.find((b) => b.index === index);
     if (!block) return { success: false, error: "Transacción no encontrada." };
     if (block.tenantId !== tenantId)
-      return { success: false, error: "Violación de tenencia cruzada (Cross-Tenant violation)." };
+      return {
+        success: false,
+        error: "Violación de tenencia cruzada (Cross-Tenant violation).",
+      };
 
     // Check if already refunded by checking for the REFUND_EVENT block
     const isAlreadyRefunded = db.ledger.some(
       (b) => b.operation === `REFUND_EVENT: Reembolso de transacción index ${index}`,
     );
     if (isAlreadyRefunded || block.status === "refunded") {
-      return { success: false, error: "Esta transacción ya ha sido reembolsada." };
+      return {
+        success: false,
+        error: "Esta transacción ya ha sido reembolsada.",
+      };
     }
 
     // Append a new, secure REFUND_EVENT block to the ledger
@@ -522,7 +602,10 @@ export class SovereignDB {
     const signingKey = config().BOOKPI_SIGNING_KEY;
     const isProduction = isProductionRuntime();
     if (isProduction && !signingKey) {
-      return { success: false, error: "BookPI requiere BOOKPI_SIGNING_KEY en producción." };
+      return {
+        success: false,
+        error: "BookPI requiere BOOKPI_SIGNING_KEY en producción.",
+      };
     }
     const pqcSignature = signingKey
       ? crypto.sign("sha384", Buffer.from(blockData), signingKey).toString("base64url")
@@ -563,11 +646,11 @@ export class SovereignDB {
   }
 
   // Get active session with multi-tenant OIDC and real, signature-validated JWT claims
-  public static getSessionByToken(token: string): UserSession | undefined {
+  public static async getSessionByToken(token: string): Promise<UserSession | undefined> {
     const db = this.load();
 
     // Try to verify as a real cryptographic token first
-    const verification = SecuritySystem.verifyToken(token);
+    const verification = await SecuritySystem.verifyToken(token);
     if (verification.success && verification.claims) {
       const claims = verification.claims;
       const session = db.sessions.find((s) => s.userId === claims.sub);
@@ -653,7 +736,8 @@ export class SovereignDB {
         continue;
       }
 
-      if (block.signatureAlgorithm !== "ECDSA-P384" || !config().BOOKPI_SIGNING_KEY) {
+      const signingKey = config().BOOKPI_SIGNING_KEY;
+      if (block.signatureAlgorithm !== "ECDSA-P384" || !signingKey) {
         return {
           success: false,
           error: `Algoritmo o clave BookPI inválidos en bloque ${i}.`,
@@ -665,7 +749,7 @@ export class SovereignDB {
         !crypto.verify(
           "sha384",
           Buffer.from(blockContent),
-          config().BOOKPI_SIGNING_KEY,
+          signingKey,
           Buffer.from(block.pqcSignature, "base64url"),
         )
       ) {
@@ -727,7 +811,11 @@ export class SovereignDB {
    * Cryptographically validates the entire chronological chain of security audit logs.
    * Assures absolute anti-tampering and event compliance.
    */
-  public static verifyAuditChain(): { success: boolean; error?: string; corruptedId?: string } {
+  public static verifyAuditChain(): {
+    success: boolean;
+    error?: string;
+    corruptedId?: string;
+  } {
     const db = this.load();
     const logs = [...db.auditLogs].reverse(); // Verify from oldest (genesis) to newest
 

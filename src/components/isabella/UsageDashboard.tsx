@@ -6,6 +6,8 @@ interface UsageDashboardProps {
   messageLimit: number;
   tokensRemaining: number;
   tokenLimit: number;
+  currentRequestsPerMin?: number;
+  rateLimitThreshold?: number;
   onRefresh: () => void;
   isRefreshing?: boolean;
 }
@@ -16,6 +18,8 @@ export function UsageDashboard({
   messageLimit,
   tokensRemaining,
   tokenLimit,
+  currentRequestsPerMin = 28,
+  rateLimitThreshold = Number(import.meta.env.VITE_RATE_LIMIT_DEFAULT_PER_MINUTE || 120),
   onRefresh,
   isRefreshing = false,
 }: UsageDashboardProps) {
@@ -36,6 +40,13 @@ export function UsageDashboard({
 
   const messagePercentage = Math.min((messagesUsed / messageLimit) * 100, 100);
   const tokenPercentage = Math.min((tokensRemaining / tokenLimit) * 100, 100);
+  const rateLimitPercentage = Math.min((currentRequestsPerMin / rateLimitThreshold) * 100, 100);
+
+  const getRateLimitColor = (pct: number) => {
+    if (pct >= 90) return "bg-rose-500 text-rose-400 border-rose-500/30";
+    if (pct >= 70) return "bg-amber-500 text-amber-400 border-amber-500/30";
+    return "bg-electric text-electric border-electric/30";
+  };
 
   return (
     <div className="glass rounded-3xl p-6 border border-border/40 shadow-glass flex flex-col gap-5">
@@ -50,7 +61,7 @@ export function UsageDashboard({
               Estadísticas de Consumo
             </span>
             <h4 className="font-display text-[15px] text-pearl font-bold">
-              Consumo de Infraestructura
+              Consumo de Infraestructura & Tasa de Solicitudes API
             </h4>
           </div>
         </div>
@@ -65,7 +76,7 @@ export function UsageDashboard({
       </div>
 
       {/* Current Status Block */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Subscription Status Card */}
         <div className="bg-secondary/15 rounded-2xl p-4 border border-border/30 flex flex-col justify-between">
           <span className="font-mono text-[9.5px] uppercase tracking-wider text-muted-foreground">
@@ -132,6 +143,46 @@ export function UsageDashboard({
           <div className="mt-3 pt-2.5 border-t border-border/15 text-[10px] text-muted-foreground font-mono flex justify-between">
             <span>Cuota máxima</span>
             <span>{tokenLimit.toLocaleString()} tokens</span>
+          </div>
+        </div>
+
+        {/* API Rate Limit Indicator Card */}
+        <div className="bg-secondary/15 rounded-2xl p-4 border border-border/30 flex flex-col justify-between">
+          <div className="flex justify-between items-center">
+            <span className="font-mono text-[9.5px] uppercase tracking-wider text-muted-foreground">
+              Tasa Solicitudes API
+            </span>
+            <span className="font-mono text-[11px] text-platinum font-semibold">
+              {currentRequestsPerMin} / {rateLimitThreshold} req/min
+            </span>
+          </div>
+          <div className="mt-3 space-y-1">
+            <div className="w-full bg-secondary/35 rounded-full h-2 overflow-hidden p-0.5 border border-border/20">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  rateLimitPercentage >= 90
+                    ? "bg-rose-500"
+                    : rateLimitPercentage >= 70
+                      ? "bg-amber-400"
+                      : "bg-electric"
+                }`}
+                style={{ width: `${rateLimitPercentage}%` }}
+              />
+            </div>
+          </div>
+          <div className="mt-3 pt-2.5 border-t border-border/15 text-[10px] text-muted-foreground font-mono flex justify-between items-center">
+            <span>Límite (Threshold)</span>
+            <span
+              className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${getRateLimitColor(
+                rateLimitPercentage,
+              )}`}
+            >
+              {rateLimitPercentage >= 90
+                ? "CRÍTICO"
+                : rateLimitPercentage >= 70
+                  ? "ELEVADO"
+                  : "NORMAL"}
+            </span>
           </div>
         </div>
       </div>

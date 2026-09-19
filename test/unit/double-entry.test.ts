@@ -138,8 +138,16 @@ describe("Double-Entry Accounting System", () => {
         description: "Venta de servicios",
         createdBy: "user-001",
         lines: [
-          { accountId: cashAccount.id, debitCents: 10000, description: "Cobro" },
-          { accountId: revenueAccount.id, creditCents: 10000, description: "Ingreso" },
+          {
+            accountId: cashAccount.id,
+            debitCents: 10000,
+            description: "Cobro",
+          },
+          {
+            accountId: revenueAccount.id,
+            creditCents: 10000,
+            description: "Ingreso",
+          },
         ],
       });
 

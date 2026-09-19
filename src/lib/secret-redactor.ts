@@ -1,23 +1,36 @@
 import { config } from "./config";
 import { secrets } from "./secrets";
 
-/**
- * REDACTOR DE SECRETOS (src/lib/secret-redactor.ts)
- * -----------------------------------------------------------------
- * Elimina tokens y secretos de los logs de forma determinista.
- * Todo log que pueda incluir entrada de usuario o errores debe pasar
- * por `redact()` antes de escribirse.
- */
+/** Deterministic secret redaction for logs and structured telemetry. */
 
+// Canonical secret registry. Keep synchronized with env-schema.ts.
 const BUILTIN_KEYS = [
-  "GEMINI_API_KEY",
   "AUTH_JWT_SECRET",
+  "SESSION_SECRET",
+  "PROVISION_OWNER_TOKEN",
+  "ENCRYPTION_MASTER_KEY",
+  "CROWN_POLICY_SIGNING_KEY",
+  "AEGIS_AUDIT_SECRET",
+  "BOOKPI_SIGNING_KEY",
+  "API_KEY_HASH_SECRET",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "GEMINI_API_KEY",
+  "GROQ_API_KEY",
+  "XAI_API_KEY",
+  "MUX_TOKEN_ID",
+  "MUX_TOKEN_SECRET",
   "SUPABASE_SERVICE_ROLE_KEY",
   "SUPABASE_ANON_KEY",
   "SUPABASE_JWT_SECRET",
-  "ENCRYPTION_MASTER_KEY",
-  "BOOKPI_SIGNING_KEY",
-  "CROWN_POLICY_SIGNING_KEY",
+  "SUPABASE_DATABASE_SUPABASE_JWT_SECRET",
+  "SUPABASE_DATABASE_SUPABASE_SECRET_KEY",
+  "SUPABASE_DATABASE_SUPABASE_SERVICE_ROLE_KEY",
+  "TURSO_AUTH_TOKEN",
+  "REDIS_TOKEN",
+  "KV_REST_API_TOKEN",
+  "UPSTASH_REDIS_TOKEN",
+  "OPENAI_COMPATIBLE_API_KEY",
 ];
 
 export interface Redactor {
@@ -29,23 +42,15 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Regex de patrones de credenciales en texto: claves, tokens, bearer,
- * secretos y strings largos tras "=" en contextos sensibles.
- */
 function buildSecretPatterns(values: string[]): RegExp {
   const seeded = values.filter((v) => v && v.length >= 8).map(escapeRegExp);
   const literals = seeded.join("|");
-
   const generic =
-    /(\b(?:api[_-]?key|secret|token|password|passwd|auth|bearer|authorization)\b\s*[:=]\s*["']?)([A-Za-z0-9_\-.+=/]{12,})(["']?)/gi;
+    /(\b(?:api[_-]?key|secret|token|password|passwd|auth|bearer|authorization|credential)\b\s*[:=]\s*["']?)([^\s"']{12,})(["']?)/gi;
   const bearer = /(\bBearer\s+)[A-Za-z0-9_\-.+=/]{20,}/gi;
-  const iv = /(iv|nonce)=["']?[A-Za-z0-9+=/]{12,}["']?/gi;
-
-  const parts = [generic.source, bearer.source, iv.source];
-  if (literals) {
-    parts.push(`(?:${literals})`);
-  }
+  const querySecret = /([?&](?:token|key|secret|password|signature)=)[^&\s]{8,}/gi;
+  const parts = [generic.source, bearer.source, querySecret.source];
+  if (literals) parts.push(`(?:${literals})`);
   return new RegExp(parts.join("|"), "gi");
 }
 
@@ -54,42 +59,26 @@ export function createRedactor(extraValues: string[] = []): Redactor {
   const extraKeys = cfg.REDACT_EXTRA_KEYS.split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-
   const dynamicValues: string[] = [];
-
-  // Lectura desde la configuración validada (§12). Sin process.env directo:
-  // el switch evita inyección de objetos y cfg es la única fuente.
   const cfgRecord = cfg as unknown as Record<string, unknown>;
   const secureEnvLookup = (key: string): string | undefined => {
-    switch (key) {
-      case "GEMINI_API_KEY":
-      case "AUTH_JWT_SECRET":
-      case "SUPABASE_SERVICE_ROLE_KEY":
-      case "SUPABASE_ANON_KEY":
-      case "SUPABASE_JWT_SECRET":
-      case "ENCRYPTION_MASTER_KEY":
-      case "BOOKPI_SIGNING_KEY":
-      case "CROWN_POLICY_SIGNING_KEY": {
-        const value = cfgRecord[key];
-        return typeof value === "string" && value.length > 0 ? value : undefined;
-      }
-      default:
-        return undefined;
-    }
+    const value = cfgRecord[key];
+    return typeof value === "string" && value.length >= 8 ? value : undefined;
   };
-
   for (const key of [...BUILTIN_KEYS, ...extraKeys]) {
     const value = secureEnvLookup(key);
     if (value) dynamicValues.push(value);
   }
-
-  // Añade valores cargados vía secrets/config (degradación segura si faltan).
   try {
-    for (const v of [secrets.jwtSecret(), secrets.aiGatewayKey(), secrets.encryptionMasterKey()]) {
-      if (v) dynamicValues.push(v);
+    for (const value of [
+      secrets.jwtSecret(),
+      secrets.aiGatewayKey(),
+      secrets.encryptionMasterKey(),
+    ]) {
+      if (value) dynamicValues.push(value);
     }
   } catch {
-    // Sin secretos configurados (p.ej. desarrollo): solo patrones genéricos.
+    // Missing optional development secrets: generic patterns remain active.
   }
 
   const pattern = buildSecretPatterns([...dynamicValues, ...extraValues]);
@@ -99,9 +88,8 @@ export function createRedactor(extraValues: string[] = []): Redactor {
   );
 
   function redact(input: string): string {
-    let out = input.replace(pattern, (_match, prefix = "") => `${prefix}[REDACTED]`);
-    out = out.replace(patternKeys, "$1[REDACTED]$2");
-    return out;
+    const out = input.replace(pattern, (_match, prefix = "") => `${prefix}[REDACTED]`);
+    return out.replace(patternKeys, "$1[REDACTED]$2");
   }
 
   function redactObject(input: unknown): unknown {
@@ -110,11 +98,8 @@ export function createRedactor(extraValues: string[] = []): Redactor {
     if (input && typeof input === "object") {
       const out: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-        if (typeof value === "string" && isSensitiveKey(key)) {
-          out[key] = "[REDACTED]";
-        } else {
-          out[key] = redactObject(value);
-        }
+        out[key] =
+          typeof value === "string" && isSensitiveKey(key) ? "[REDACTED]" : redactObject(value);
       }
       return out;
     }
@@ -125,7 +110,7 @@ export function createRedactor(extraValues: string[] = []): Redactor {
 }
 
 function isSensitiveKey(key: string): boolean {
-  return /(secret|token|password|passwd|api[_-]?key|jwt|signing|encryption|bearer|credential)/i.test(
+  return /(secret|token|password|passwd|api[_-]?key|jwt|signing|encryption|bearer|credential|private[_-]?key)/i.test(
     key,
   );
 }

@@ -16,13 +16,22 @@ export function TerminalView() {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [lines, setLines] = useState<TerminalLine[]>([
     { text: "ISABELLA COGNITIVE SHELL v4.2.0-SOVEREIGN", type: "header" },
-    { text: "TAMV ONLINE NETWORK · Nodo Cero · Real del Monte, Hidalgo", type: "system" },
-    { text: "Gobernanza C.R.O.W.N. activa en canal criptográfico seguro.", type: "success" },
+    {
+      text: "TAMV ONLINE NETWORK · Nodo Cero · Real del Monte, Hidalgo",
+      type: "system",
+    },
+    {
+      text: "Gobernanza C.R.O.W.N. activa en canal criptográfico seguro.",
+      type: "success",
+    },
     {
       text: 'Escribe "help" para listar los comandos constitucionales disponibles.',
       type: "system",
     },
-    { text: "--------------------------------------------------------", type: "system" },
+    {
+      text: "--------------------------------------------------------",
+      type: "system",
+    },
   ]);
 
   const bufferEndRef = useRef<HTMLDivElement | null>(null);

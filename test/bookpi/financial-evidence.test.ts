@@ -30,21 +30,24 @@ beforeAll(async () => {
 describe("Stripe webhook signature verification (real, sin red)", () => {
   it("acepta evento firmado y rechaza payload manipulado", { timeout: 30000 }, async () => {
     const Stripe = (await import("stripe")).default;
-    const stripe = new Stripe("sk_test_evidence", { apiVersion: "2022-11-15" as never });
+    const stripe = new Stripe("sk_test_evidence", {
+      apiVersion: "2022-11-15" as never,
+    });
     const secret = "whsec_evidence_secret";
     const payload = JSON.stringify({
       id: "evt_evidence_1",
       type: "checkout.session.completed",
       data: { object: { id: "cs_test", metadata: { planId: "pro" } } },
     });
-    const header = stripe.webhooks.generateTestHeaderString({ payload, secret });
+    const header = stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret,
+    });
     const event = stripe.webhooks.constructEvent(payload, header, secret);
     expect(event.id).toBe("evt_evidence_1");
     expect(event.type).toBe("checkout.session.completed");
 
-    expect(() =>
-      stripe.webhooks.constructEvent(`${payload} `, header, secret),
-    ).toThrow();
+    expect(() => stripe.webhooks.constructEvent(`${payload} `, header, secret)).toThrow();
   });
 });
 
@@ -54,7 +57,11 @@ describe.skipIf(!HAS_DB)("idempotencia concurrente (PostgreSQL real)", () => {
     const eventId = `evt_conc_${randomUUID()}`;
     const results = await Promise.all(
       Array.from({ length: 10 }, () =>
-        claimWebhookEvent({ provider: "stripe", providerEventId: eventId, eventType: "charge.succeeded" }),
+        claimWebhookEvent({
+          provider: "stripe",
+          providerEventId: eventId,
+          eventType: "charge.succeeded",
+        }),
       ),
     );
     const processed = results.filter((result) => result.status === "processed");
@@ -115,9 +122,8 @@ describe.skipIf(!HAS_DB)("idempotencia concurrente (PostgreSQL real)", () => {
 
 describe.skipIf(!HAS_DB)("BookPI concurrente + refund único (PostgreSQL real)", () => {
   it("appends concurrentes → índices contiguos y cadena válida", async () => {
-    const { createBookpiPostgresRepository } = await import(
-      "@/lib/repositories/bookpi-postgres-repository"
-    );
+    const { createBookpiPostgresRepository } =
+      await import("@/lib/repositories/bookpi-postgres-repository");
     const repo = createBookpiPostgresRepository();
     const tenant = `tenant_ledger_${randomUUID().slice(0, 8)}`;
     const results = await Promise.all(
@@ -142,9 +148,8 @@ describe.skipIf(!HAS_DB)("BookPI concurrente + refund único (PostgreSQL real)",
   });
 
   it("doble refund simultáneo → 1 éxito + original intacto", async () => {
-    const { createBookpiPostgresRepository } = await import(
-      "@/lib/repositories/bookpi-postgres-repository"
-    );
+    const { createBookpiPostgresRepository } =
+      await import("@/lib/repositories/bookpi-postgres-repository");
     const repo = createBookpiPostgresRepository();
     const tenant = `tenant_refund_${randomUUID().slice(0, 8)}`;
     const appended = await repo.append({

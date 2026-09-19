@@ -13,15 +13,37 @@ export interface GovernanceValidationRequest {
   fidelityTarget: number;
 }
 
+export interface AtlasData {
+  impactLevel?: string;
+  approved?: boolean;
+  data?: {
+    territorialImpact?: number;
+    interpretation?: "POSITIVE" | "NEUTRAL" | "NEGATIVE";
+  };
+}
+
+export interface ThemisData {
+  expedienteId?: string;
+  data?: { auditability?: "SUFFICIENT" | "PARTIAL" | "INSUFFICIENT" };
+  summary?: string;
+}
+
+export interface VigiaData {
+  lockStatus?: string;
+  data?: { allowed?: boolean };
+}
+
+export interface GovernanceAuditTrail {
+  atlasDecision: AtlasData | null;
+  anubisHash: string;
+  themisExpediente: ThemisData | null;
+  vigiaLock: VigiaData | null;
+}
+
 export interface GovernanceValidationResult {
   approved: boolean;
   rejectionReason?: string;
-  auditTrail: {
-    atlasDecision: any;
-    anubisHash: string;
-    themisExpediente: any;
-    vigiaLock: any;
-  };
+  auditTrail: GovernanceAuditTrail;
   merkleRoot: string;
   auditSeal: string;
 }
@@ -59,7 +81,7 @@ export class IsabellaGovernance {
           intent: "QUANTUM_GOVERNANCE_CHECK",
         },
       );
-      const atlasData = atlasRes.data as any;
+      const atlasData = atlasRes.data as unknown as AtlasData;
 
       if (atlasData?.impactLevel === "CRITICAL" && !atlasData?.approved) {
         throw new Error("ATLAS rejected the scenario due to critical territorial impact.");
@@ -82,7 +104,7 @@ export class IsabellaGovernance {
           intent: "QUANTUM_GOVERNANCE_CHECK",
         },
       );
-      const vigiaData = vigiaRes.data as any;
+      const vigiaData = vigiaRes.data as unknown as VigiaData;
 
       if (vigiaData?.lockStatus === "LOCKED") {
         throw new Error("VIGIA Ethical Multi-Lock prevented execution.");
@@ -117,7 +139,7 @@ export class IsabellaGovernance {
           intent: "QUANTUM_GOVERNANCE_CHECK",
         },
       );
-      const anubisData = anubisRes.data as any;
+      const anubisData = anubisRes.data as unknown as { integrityHash?: string };
 
       // 4. THEMIS: Legal Explanable Expediente
       const themisRes = await runIsabellaSkill(
@@ -138,7 +160,7 @@ export class IsabellaGovernance {
           intent: "QUANTUM_GOVERNANCE_CHECK",
         },
       );
-      const themisData = themisRes.data as any;
+      const themisData = themisRes.data as unknown as ThemisData;
 
       // 5. Sello de auditoría soberana (HMAC-SHA3-512 verificable).
       const payloadToSign = JSON.stringify({
@@ -160,10 +182,11 @@ export class IsabellaGovernance {
         merkleRoot: merkleTree.root,
         auditSeal: signature,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown governance failure";
       return {
         approved: false,
-        rejectionReason: error.message || "Unknown governance failure",
+        rejectionReason: message,
         auditTrail: {
           atlasDecision: null,
           anubisHash: "",

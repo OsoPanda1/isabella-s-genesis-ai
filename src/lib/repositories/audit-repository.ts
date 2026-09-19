@@ -47,6 +47,14 @@ function sha256(input: string): string {
  * Crea un repositorio de auditoría ligado a una ruta opcional (inyectable).
  */
 export function createAuditRepository(storePath: string = STORE_PATH) {
+  // Mutex por store: escrituras concurrentes del proceso se serializan;
+  // dos appends jamás leen el mismo "último hash" (sin bifurcación).
+  let tail: Promise<unknown> = Promise.resolve();
+  function locked<T>(task: () => T | Promise<T>): Promise<T> {
+    const next = tail.catch(() => undefined).then(task);
+    tail = next.catch(() => undefined);
+    return next;
+  }
   function loadStore(): AuditStoreFile {
     if (!fs.existsSync(storePath)) {
       return { events: [], genesisPreviousHash: GENESIS_HASH };
@@ -73,7 +81,7 @@ export function createAuditRepository(storePath: string = STORE_PATH) {
   }
 
   return {
-    /** Registra un evento de auditoría, encadenado al anterior. */
+    /** Registra un evento de auditoría, encadenado al anterior (serializado). */
     append(input: {
       traceId: string;
       correlationId: string;
@@ -82,31 +90,33 @@ export function createAuditRepository(storePath: string = STORE_PATH) {
       severity: AuditSeverity;
       details: string;
       remediated?: boolean;
-    }): AuditEvent {
-      const store = loadStore();
-      const prev = store.events[0];
-      const previousLogHash = prev?.verificationHash ?? store.genesisPreviousHash;
-      const id = `evt_${crypto.randomUUID()}`;
-      const timestamp = new Date().toISOString();
-      const remediated = input.remediated ?? (input.severity === "S1" || input.severity === "S2");
-      const payload = `${id}|${timestamp}|${input.traceId}|${input.correlationId}|${input.actorIp}|${input.event}|${input.severity}|${input.details}|${remediated ? "true" : "false"}|${previousLogHash}`;
-      const verificationHash = sha256(payload);
-      const event: AuditEvent = {
-        id,
-        timestamp,
-        traceId: input.traceId,
-        correlationId: input.correlationId,
-        actorIp: input.actorIp,
-        event: input.event,
-        severity: input.severity,
-        details: input.details,
-        remediated,
-        verificationHash,
-        previousLogHash,
-      };
-      store.events.unshift(event);
-      saveStore(store);
-      return event;
+    }): Promise<AuditEvent> {
+      return locked(() => {
+        const store = loadStore();
+        const prev = store.events[0];
+        const previousLogHash = prev?.verificationHash ?? store.genesisPreviousHash;
+        const id = `evt_${crypto.randomUUID()}`;
+        const timestamp = new Date().toISOString();
+        const remediated = input.remediated ?? (input.severity === "S1" || input.severity === "S2");
+        const payload = `${id}|${timestamp}|${input.traceId}|${input.correlationId}|${input.actorIp}|${input.event}|${input.severity}|${input.details}|${remediated ? "true" : "false"}|${previousLogHash}`;
+        const verificationHash = sha256(payload);
+        const event: AuditEvent = {
+          id,
+          timestamp,
+          traceId: input.traceId,
+          correlationId: input.correlationId,
+          actorIp: input.actorIp,
+          event: input.event,
+          severity: input.severity,
+          details: input.details,
+          remediated,
+          verificationHash,
+          previousLogHash,
+        };
+        store.events.unshift(event);
+        saveStore(store);
+        return event;
+      });
     },
 
     list(limit = 200): AuditEvent[] {
@@ -120,15 +130,28 @@ export function createAuditRepository(storePath: string = STORE_PATH) {
       let prev = store.genesisPreviousHash;
       for (let i = 0; i < logs.length; i++) {
         const log = logs[i];
-        if (!log) return { success: false, error: "Evento ausente.", corruptedId: "unknown" };
+        if (!log)
+          return {
+            success: false,
+            error: "Evento ausente.",
+            corruptedId: "unknown",
+          };
         const expectedPrev =
           i === 0 ? store.genesisPreviousHash : (logs[i - 1]?.verificationHash ?? "");
         if (log.previousLogHash !== expectedPrev) {
-          return { success: false, error: "Cadena de auditoría rota.", corruptedId: log.id };
+          return {
+            success: false,
+            error: "Cadena de auditoría rota.",
+            corruptedId: log.id,
+          };
         }
         const payload = `${log.id}|${log.timestamp}|${log.traceId}|${log.correlationId}|${log.actorIp}|${log.event}|${log.severity}|${log.details}|${log.remediated ? "true" : "false"}|${log.previousLogHash}`;
         if (sha256(payload) !== log.verificationHash) {
-          return { success: false, error: "Evento alterado.", corruptedId: log.id };
+          return {
+            success: false,
+            error: "Evento alterado.",
+            corruptedId: log.id,
+          };
         }
         prev = log.verificationHash;
       }

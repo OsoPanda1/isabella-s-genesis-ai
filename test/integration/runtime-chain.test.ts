@@ -58,7 +58,11 @@ describe("cadena runtime auth → CROWN → AEGIS → memory → audit", () => {
       resource: "tool:memory.retrieve",
       role: "Operator",
       authenticated: true,
-      context: { ip_address: "127.0.0.1", user_agent: "integration", timestamp: new Date() },
+      context: {
+        ip_address: "127.0.0.1",
+        user_agent: "integration",
+        timestamp: new Date(),
+      },
     });
     expect(decision.allow).toBe(true);
   });
@@ -77,7 +81,7 @@ describe("cadena runtime auth → CROWN → AEGIS → memory → audit", () => {
     const memoryRepository = createMemoryRepository(memPath);
     const auditRepository = createAuditRepository(auditPath);
 
-    const seed = memoryRepository.add({
+    const seed = await memoryRepository.add({
       tenantId: "tenant_chain",
       content: "Saldo inicial verificado del tenant.",
       source: "system",
@@ -89,7 +93,10 @@ describe("cadena runtime auth → CROWN → AEGIS → memory → audit", () => {
     });
     expect(seed.success).toBe(true);
 
-    const pipeline = createSovereignPipeline({ memoryRepository, auditRepository });
+    const pipeline = createSovereignPipeline({
+      memoryRepository,
+      auditRepository,
+    });
     const result = await pipeline.execute({
       requestId: "req_chain_1",
       traceId: "trace_chain_1",
@@ -133,7 +140,12 @@ describe("cadena runtime auth → CROWN → AEGIS → memory → audit", () => {
       actorIp: "127.0.0.1",
       tenantId: "tenant_chain",
       input: "Ejecuta la herramienta de memoria.",
-      identity: { ...OPERATOR_IDENTITY, authenticated: false, roles: ["Guest"], permissions: [] },
+      identity: {
+        ...OPERATOR_IDENTITY,
+        authenticated: false,
+        roles: ["Guest"],
+        permissions: [],
+      },
       evidence: EVIDENCE,
       timestamp: new Date().toISOString(),
       memoryScope: "turn",
@@ -172,7 +184,12 @@ describe("cadena runtime auth → CROWN → AEGIS → memory → audit", () => {
     expect(noApproval.executed).toBe(false);
     expect(noApproval).toHaveProperty("stage", "approval");
 
-    const grant = authority.approvals.grant("trace_apr_1", "compute.sandbox", "op_integration", "tenant_chain");
+    const grant = authority.approvals.grant(
+      "trace_apr_1",
+      "compute.sandbox",
+      "op_integration",
+      "tenant_chain",
+    );
     const withApproval = await authority.execute({
       tool: "compute.sandbox",
       input: {},

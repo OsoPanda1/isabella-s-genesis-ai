@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import { repositoryFactory } from "./persistence/repository-factory";
 import type { ApiKey } from "./persistence/repository";
 import { ApiKeyCrypto } from "./api-key-crypto";
@@ -205,7 +206,9 @@ export class ApiKeyService {
       if (usePostgres) {
         await createApiKeyPostgresRepository().updateStatus(record.id, "expired");
       } else {
-        await this.repo.update(record.tenant_id, record.id, { status: "expired" });
+        await this.repo.update(record.tenant_id, record.id, {
+          status: "expired",
+        });
       }
       return { success: false, error: "credential_expired" };
     }
@@ -213,7 +216,9 @@ export class ApiKeyService {
     if (usePostgres) {
       await createApiKeyPostgresRepository().touchLastUsed(record.id);
     } else {
-      await this.repo.update(record.tenant_id, record.id, { lastUsedAt: new Date().toISOString() });
+      await this.repo.update(record.tenant_id, record.id, {
+        lastUsedAt: new Date().toISOString(),
+      });
     }
 
     return { success: true, record };

@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Cuenta de monetización por usuario: ceros reales por defecto, sin
+// saldos/identidad sintéticos (ver SovereignDB.getMonetizationAccount).
+model MonetizationAccount {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId               String   @unique @map("user_id") @db.VarChar(128)
+  earnedBalanceCents   Int      @default(0) @map("earned_balance_cents")
+  qualifiedUses        Int      @default(0) @map("qualified_uses")
+  approvedContributions Int     @default(0) @map("approved_contributions")
+  trainingCompleted    Boolean  @default(false) @map("training_completed")
+  identityVerified     Boolean  @default(false) @map("identity_verified")
+  paymentAccountVerified Boolean @default(false) @map("payment_account_verified")
+  profileComplete      Boolean  @default(false) @map("profile_complete")
+  sanctioned           Boolean  @default(false)
+  underFraudReview     Boolean  @default(false) @map("under_fraud_review")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("monetization_accounts")
+}
+
+model AccountingAccount {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  code      String   @db.VarChar(50)
+  name      String   @db.VarChar(255)
+  type      String   @db.VarChar(50)
+  parentId  String?  @map("parent_id") @db.Uuid
+  currency  String   @default("USD") @db.VarChar(10)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  parent   AccountingAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children AccountingAccount[] @relation("AccountHierarchy")
+
+  ledgerLines AccountingLedgerLine[]
+
+  @@unique([tenantId, code])
+  @@map("accounting_accounts")
+}
+
+model AccountingJournalEntry {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  entryNumber String    @map("entry_number") @db.VarChar(100)
+  description String
+  status      String    @db.VarChar(50)
+  postedAt    DateTime? @map("posted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy   String    @map("created_by") @db.VarChar(255)
+  metadata    Json?
+
+  lines AccountingLedgerLine[]
+
+  @@unique([tenantId, entryNumber])
+  @@index([tenantId])
+  @@map("accounting_journal_entries")
+}
+
+model AccountingLedgerLine {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entryId     String   @map("entry_id") @db.Uuid
+  accountId   String   @map("account_id") @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  debitCents  BigInt   @default(0) @map("debit_cents")
+  creditCents BigInt   @default(0) @map("credit_cents")
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  metadata    Json?
+
+  entry   AccountingJournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account AccountingAccount      @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@index([entryId])
+  @@map("accounting_ledger_lines")
+}

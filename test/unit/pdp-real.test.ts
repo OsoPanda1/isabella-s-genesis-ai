@@ -62,7 +62,14 @@ describe("PDP real (authorization.ts)", () => {
   it("niega por anomalía de comportamiento", async () => {
     const { evaluateAuthorization } = await import("@/lib/authorization");
     const decision = await evaluateAuthorization(
-      baseCtx({ context: { ip_address: "127.0.0.1", user_agent: "vitest", timestamp: new Date(), behavior_score: 95 } }),
+      baseCtx({
+        context: {
+          ip_address: "127.0.0.1",
+          user_agent: "vitest",
+          timestamp: new Date(),
+          behavior_score: 95,
+        },
+      }),
     );
     expect(decision.allow).toBe(false);
   });
@@ -70,7 +77,11 @@ describe("PDP real (authorization.ts)", () => {
   it("niega skill a Guest (skills requieren tool:execute)", async () => {
     const { evaluateAuthorization } = await import("@/lib/authorization");
     const decision = await evaluateAuthorization(
-      baseCtx({ resource: "skill:atlas", action: "skill.execute", role: "Guest" }),
+      baseCtx({
+        resource: "skill:atlas",
+        action: "skill.execute",
+        role: "Guest",
+      }),
     );
     expect(decision.allow).toBe(false);
   });
@@ -78,7 +89,11 @@ describe("PDP real (authorization.ts)", () => {
   it("permite skill a Operator", async () => {
     const { evaluateAuthorization } = await import("@/lib/authorization");
     const decision = await evaluateAuthorization(
-      baseCtx({ resource: "skill:atlas", action: "skill.execute", role: "Operator" }),
+      baseCtx({
+        resource: "skill:atlas",
+        action: "skill.execute",
+        role: "Operator",
+      }),
     );
     expect(decision.allow).toBe(true);
   });

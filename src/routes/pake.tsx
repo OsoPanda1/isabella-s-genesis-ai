@@ -1,7 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { PakeMonitor } from '../components/pake-monitor';
+import { createFileRoute } from "@tanstack/react-router";
+import { PakeMonitor } from "../components/pake-monitor";
 
-export const Route = createFileRoute('/pake')({
+export const Route = createFileRoute("/pake")({
   component: PakePage,
 });
 
@@ -15,7 +15,7 @@ function PakePage() {
             Professional Anchoring of Ethical Knowledge — Active Cognitive Sandbox
           </p>
         </div>
-        
+
         <PakeMonitor />
       </div>
     </div>

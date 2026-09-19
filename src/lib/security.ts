@@ -1,18 +1,15 @@
 import { z } from "zod";
 import * as crypto from "node:crypto";
+import { isIP } from "node:net";
 import { config } from "./config";
+import { isProductionLike, resolveRuntimeMode } from "./runtime-mode";
 import { JWT_VERIFIER } from "./jwt-verifier";
+import { AuthVerificationLayer } from "./auth-verification-layer";
 
 // ============================================================================
 // CANONICAL SEVEN LAYERS OF SECURITY HARDENING SYSTEM - ISABELLA v4.2.0
 // ============================================================================
 
-/**
- * Clave de firma del nodo. Proviene de la configuracin validada
- * (NUNCA de `process.env` directo ni de valores de relleno). Si no
- * hay clave configurada, firmar tokens es un error — no se usa un
- * fallback falso (zero mockdata / zero fake-security).
- */
 function securitySecret(): string {
   const value = config().AUTH_JWT_SECRET;
   if (!value) {
@@ -23,11 +20,17 @@ function securitySecret(): string {
   return value;
 }
 
-// --- LAYER 2: Distributed Rate Limiting (Upstash Redis + in-memory fallback) ---
-const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute window
+const RATE_LIMIT_WINDOW_MS = 60000;
 const rateLimitCache = new Map<string, { count: number; windowStart: number }>();
 
-// Upstash Redis client lazy — only instantiated if REDIS_URL/KV_URL present
+function isProductionLikeRuntime(): boolean {
+  try {
+    return isProductionLike(resolveRuntimeMode(config().ISABELLA_RUNTIME_MODE));
+  } catch {
+    return true;
+  }
+}
+
 let redisClient: {
   incr: (key: string) => Promise<number>;
   expire: (key: string, sec: number) => Promise<number>;
@@ -38,17 +41,12 @@ async function getRedis(): Promise<typeof redisClient> {
   const url = config().REDIS_URL || config().KV_URL;
   if (!url) return null;
   try {
-    // Dynamic import to avoid hard dependency in dev without Redis
     const mod = (await import("@upstash/redis").catch(() => null)) as unknown as {
       Redis?: new (opts: { url: string; token?: string }) => unknown;
     } | null;
-    if (!mod?.Redis) {
-      // Fallback to simple fetch-based incr if @upstash/redis not installed — use memory
-      return null;
-    }
+    if (!mod?.Redis) return null;
     const token =
       config().KV_REST_API_TOKEN || config().UPSTASH_REDIS_TOKEN || config().REDIS_TOKEN;
-    // Upstash Redis constructor (casteado explícitamente; no requiere supresión de tipos)
     redisClient = new (
       mod.Redis as unknown as new (opts: Record<string, unknown>) => typeof redisClient
     )({ url, token } as Record<string, unknown>) as typeof redisClient;
@@ -78,12 +76,11 @@ export interface TokenClaims {
   jti?: string;
 }
 
-/**
- * Allowlist de hosts autorizados para egress server-side (anti-SSRF).
- * Solo HTTPS, sin credenciales embebidas, sin hosts arbitrarios.
- * El host de voz (VOICE_API_URL) se admite dinámicamente si está configurado.
- */
-const UPSTREAM_ALLOWLIST: readonly string[] = ["generativelanguage.googleapis.com"];
+const UPSTREAM_ALLOWLIST: readonly string[] = [
+  "generativelanguage.googleapis.com",
+  "api.groq.com",
+  "api.x.ai",
+];
 
 function isUpstreamAllowed(url: string): boolean {
   let parsed: URL;
@@ -107,28 +104,30 @@ function isUpstreamAllowed(url: string): boolean {
 
 export const SecuritySystem = {
   // --- LAYER 0: Secure IP Resolver (Trusted Proxy Guard) ---
+  // Only explicit proxy contracts are trusted. The legacy boolean mode and
+  // arbitrary X-Forwarded-For are fail-closed.
   resolveClientIp(request: Request): string {
-    const trustedMode = config().TRUSTED_PROXY_MODE === "true";
-    // Only trust x-forwarded-for/cf-connecting-ip when behind trusted proxy (Vercel/Cloudflare)
-    if (trustedMode) {
-      const cfIp = request.headers.get("cf-connecting-ip");
-      if (cfIp) return cfIp.trim();
-      const realIp = request.headers.get("x-real-ip");
-      if (realIp) return realIp.trim();
-      const forwardedFor = request.headers.get("x-forwarded-for");
-      if (forwardedFor) {
-        const parts = forwardedFor.split(",");
-        const firstIp = parts[0]?.trim();
-        if (firstIp) return firstIp;
-      }
+    let mode = "";
+    try {
+      mode = String(config().TRUSTED_PROXY_MODE ?? "")
+        .trim()
+        .toLowerCase();
+    } catch {
+      return "unknown";
     }
-    // Fallback: Vercel provides x-vercel-forwarded-for, otherwise remote address is not reliably available in edge
-    const vercelIp = request.headers.get("x-vercel-forwarded-for");
-    if (vercelIp) return vercelIp.split(",")[0]?.trim() ?? "local_client";
-    return "local_client";
+
+    const candidate =
+      mode === "vercel"
+        ? request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim()
+        : mode === "cloudflare"
+          ? request.headers.get("cf-connecting-ip")?.trim()
+          : mode === "generic"
+            ? request.headers.get("x-real-ip")?.trim()
+            : undefined;
+
+    return candidate && isIP(candidate) !== 0 ? candidate : "unknown";
   },
 
-  // --- LAYER 1: Input Integrity Validation ---
   validateInput<T>(
     schema: z.Schema<T>,
     payload: unknown,
@@ -144,31 +143,39 @@ export const SecuritySystem = {
     return { success: true, data: result.data };
   },
 
-  // --- LAYER 2: Advanced Server-Side API Rate Limiting ---
   checkRateLimit(ip: string, limit: number = 30): { allowed: boolean; remaining: number } {
     const now = Date.now();
     const entry = rateLimitCache.get(ip);
-
     if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
       rateLimitCache.set(ip, { count: 1, windowStart: now });
       return { allowed: true, remaining: limit - 1 };
     }
-
-    if (entry.count >= limit) {
-      return { allowed: false, remaining: 0 };
-    }
-
+    if (entry.count >= limit) return { allowed: false, remaining: 0 };
     entry.count += 1;
     return { allowed: true, remaining: limit - entry.count };
   },
 
-  // Distributed rate limit — uses Upstash Redis when available, falls back to memory
   async checkRateLimitDistributed(
     ip: string,
     limit: number = 30,
-  ): Promise<{ allowed: boolean; remaining: number }> {
+  ): Promise<{
+    allowed: boolean;
+    remaining: number;
+    degraded?: boolean;
+    reason?: string;
+  }> {
     const redis = await getRedis();
-    if (!redis) return this.checkRateLimit(ip, limit);
+    if (!redis) {
+      if (isProductionLikeRuntime()) {
+        return {
+          allowed: false,
+          remaining: 0,
+          degraded: true,
+          reason: "rate-limit-infrastructure-unavailable",
+        };
+      }
+      return this.checkRateLimit(ip, limit);
+    }
     try {
       const key = `ratelimit:${ip}:${Math.floor(Date.now() / RATE_LIMIT_WINDOW_MS)}`;
       const count = await redis.incr(key);
@@ -176,18 +183,33 @@ export const SecuritySystem = {
       const remaining = Math.max(0, limit - count);
       return { allowed: count <= limit, remaining };
     } catch {
+      if (isProductionLikeRuntime()) {
+        return {
+          allowed: false,
+          remaining: 0,
+          degraded: true,
+          reason: "rate-limit-infrastructure-unavailable",
+        };
+      }
       return this.checkRateLimit(ip, limit);
     }
   },
 
-  // --- LAYER 3: Sovereign Cryptographic Authorization & Token Verification ---
-  generateSovereignToken(userId: string, role: string, tenantId: string, scope: string): string {
+  /**
+   * Genera un token soberano firmado con AUTH_JWT_SECRET para uso general.
+   */
+  async generateSovereignToken(
+    userId: string,
+    role: string,
+    tenantId: string,
+    scope: string,
+  ): Promise<string> {
     const payload = {
       iss: "TAMV Online Network Security Hub",
       sub: userId,
       aud: "Isabella S0 Gateway",
-      exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour expiration
-      jti: crypto.randomUUID(), // P0-02: identificador único para validación de sesión
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      jti: crypto.randomUUID(),
       tenantId,
       role,
       scope,
@@ -195,7 +217,73 @@ export const SecuritySystem = {
     return JWT_VERIFIER.signHs256(payload, securitySecret());
   },
 
-  verifyToken(token: string | null): { success: boolean; claims?: TokenClaims; error?: string } {
+  /**
+   * Genera un token RLS (Row Level Security) firmado con SUPABASE_JWT_SECRET
+   * para que PostgREST lo valide y pule request.jwt.claims.
+   * El secreto legacy es obligatorio: desde que Supabase migró a JWT Signing Keys
+   * (ECC P-256), el único secreto compartido que PostgREST acepta para HS256 es
+   * el Legacy secret. Sin él, se niega la operación (fail-closed → RLS imposible).
+   */
+  generateSupabaseRlsToken(
+    userId: string,
+    tenantId: string,
+    scope: string,
+  ): string {
+    const legacy = config().SUPABASE_JWT_SECRET;
+    if (!legacy) {
+      throw new Error(
+        "securitySecret: SUPABASE_JWT_SECRET (Legacy JWT Secret de Supabase) no configurado. " +
+          "PostgREST no puede validar tokens soberanos para RLS tenant-scoped (P0-13).",
+      );
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+      iss: "TAMV Online Network Security Hub",
+      sub: userId,
+      aud: "Isabella S0 Gateway",
+      iat: now,
+      exp: now + 3300, // 55 min — algo menor a la hora de sesión
+      jti: crypto.randomUUID(),
+      // Claims que consumen las políticas RLS (request.jwt.claims):
+      role: "authenticated", // rol Postgres real que PostgREST usa al ejecutar
+      tenantId, // auth.current_tenant_id() (init_schema.sql)
+      tenant_id: tenantId, // aislamiento api_keys (request.jwt.claims.tenant_id)
+      scope,
+    };
+    return JWT_VERIFIER.signHs256(payload, legacy);
+  },
+
+  /**
+   * Verifica un JWT usando AuthVerificationLayer (nueva arquitectura) o
+   * fallback al validación directa con AUTH_JWT_SECRET.
+   * Acepta un segundo argumento ctx con metadatos opcionales (ip, traceId, etc.).
+   */
+  async verifyToken(
+    token: string | null,
+    ctx?: {
+      ip?: string;
+      traceId?: string;
+      correlationId?: string;
+      requiredScope?: string;
+      expectedAudience?: string;
+    },
+  ): Promise<{
+    success: boolean;
+    claims?: TokenClaims;
+    error?: string;
+    provider?: string;
+  }> {
+    // Intento usando AuthVerificationLayer (nueva arquitectura)
+    try {
+      const outcome = await AuthVerificationLayer.verifyToken(token, ctx);
+      if (outcome.success) {
+        return { success: true, claims: outcome.claims, provider: "auth-verification-layer" };
+      }
+    } catch (_authError) {
+      // Continuar con fallback legacy si AuthVerificationLayer falla
+    }
+
+    // Fallback legacy: verificación directa con AUTH_JWT_SECRET
     if (!token) {
       return { success: false, error: "Credencial nula: No se proporcionó clave de API." };
     }
@@ -230,15 +318,14 @@ export const SecuritySystem = {
     }
   },
 
-  verifyApiScope(
+  async verifyApiScope(
     token: string | null,
     requiredScope: string,
-  ): { allowed: boolean; reason?: string; claims?: TokenClaims } {
-    const verification = this.verifyToken(token);
+  ): Promise<{ allowed: boolean; reason?: string; claims?: TokenClaims }> {
+    const verification = await this.verifyToken(token);
     if (!verification.success) {
       return { allowed: false, reason: verification.error ?? "Credencial no válida." };
     }
-
     const claims = verification.claims!;
     const scopesList = claims.scope.split(" ");
     if (!scopesList.includes(requiredScope)) {
@@ -247,22 +334,35 @@ export const SecuritySystem = {
         reason: `Ámbito insuficiente (Scope violation): Requiere '${requiredScope}'.`,
       };
     }
-
     return { allowed: true, claims };
   },
 
-  // --- LAYER 4: Hardened OWASP Secure Headers (No unsafe-eval, migration to nonce CSP) ---
+  // --- LAYER 4: Hardened OWASP Secure Headers ---
   injectSecureHeaders(headers: Headers = new Headers()): Headers {
-    // TanStack hydration still requires inline bootstrap. The enforced policy is
-    // deliberately transitional and the nonce policy is Report-Only until the
-    // framework emits matching per-request nonces.
-    headers.set(
-      "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; media-src 'self' blob:; connect-src 'self' https://generativelanguage.googleapis.com https://*.supabase.co https://*.neon.tech; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
-    );
+    if (!headers.has("Content-Security-Policy")) {
+      const production = isProductionLikeRuntime();
+      const scriptSource = production ? "'self'" : "'self' 'unsafe-inline'";
+      headers.set(
+        "Content-Security-Policy",
+        [
+          "default-src 'self'",
+          "object-src 'none'",
+          "base-uri 'self'",
+          "frame-ancestors 'none'",
+          "form-action 'self'",
+          "img-src 'self' data: blob: https:",
+          "font-src 'self' data: https:",
+          "media-src 'self' blob:",
+          "connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.x.ai https://api.stripe.com https://stream.mux.com https://*.supabase.co",
+          "style-src 'self' 'unsafe-inline'",
+          `script-src ${scriptSource}`,
+          "worker-src 'self' blob:",
+          "upgrade-insecure-requests",
+        ].join("; "),
+      );
+    }
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("X-Frame-Options", "DENY");
-    // Modern secure browsers ignore X-XSS-Protection or suffer from filter bypasses; 0 disables the legacy auditor safely
     headers.set("X-XSS-Protection", "0");
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
     headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
@@ -270,16 +370,12 @@ export const SecuritySystem = {
     headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     headers.set("Cross-Origin-Opener-Policy", "same-origin");
     headers.set("Cross-Origin-Resource-Policy", "same-origin");
-    headers.set(
-      "Content-Security-Policy-Report-Only",
-      "default-src 'self'; script-src 'self' 'nonce-{REQUEST_NONCE}'; style-src 'self' 'nonce-{STYLE_NONCE}'; img-src 'self' data: blob:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests;",
-    );
+    // Never advertise a literal nonce placeholder as if it were a real CSP nonce.
+    headers.delete("Content-Security-Policy-Report-Only");
     return headers;
   },
 
-  // --- LAYER 5: Upstream Allowlist + Safe Fallback & Circuit Breaker ---
   UPSTREAM_ALLOWLIST,
-
   isUpstreamAllowed,
 
   async fetchSafeUpstream(url: string, options: RequestInit): Promise<Response> {
@@ -289,15 +385,12 @@ export const SecuritySystem = {
     return globalCircuitBreaker.execute(url, options);
   },
 
-  // --- LAYER 6: Auditable Trace Telemetry ---
   generateTelemetry(ip: string, policy: "allowed" | "denied" | "flagged"): SecurityTelemetry {
     const traceId = "tr_" + this.simpleHash(crypto.randomUUID()).toUpperCase();
     const correlationId = "corr_" + this.simpleHash(crypto.randomUUID() + "corr").toUpperCase();
-
     const entry = rateLimitCache.get(ip);
     const maxLimit = 120;
     const rateLimitRemaining = entry ? Math.max(0, maxLimit - entry.count) : maxLimit;
-
     return {
       traceId,
       correlationId,
@@ -316,11 +409,8 @@ export const SecuritySystem = {
     };
   },
 
-  // --- LAYER 7: Hostile Content & Robust Prompt Injection Filtering ---
   sanitizePayload(text: string): { clean: string; flagged: boolean; reason?: string } {
     const lowercase = text.toLowerCase();
-
-    // Advanced prompt injection, system override, context smuggling, unicode escapes, and hostile tags
     const hostilePatterns = [
       "<script",
       "javascript:",
@@ -342,7 +432,6 @@ export const SecuritySystem = {
       "\\u003cscript",
       "\\u002e\\u002e\\u002f",
     ];
-
     for (const pattern of hostilePatterns) {
       if (lowercase.includes(pattern)) {
         return {
@@ -352,11 +441,9 @@ export const SecuritySystem = {
         };
       }
     }
-
     return { clean: text, flagged: false };
   },
 
-  // Cryptographically secure HMAC SHA-256
   hmacSha256(message: string, key: string): string {
     return crypto.createHmac("sha256", key).update(message).digest("hex");
   },
@@ -365,10 +452,6 @@ export const SecuritySystem = {
     return crypto.createHash("sha256").update(input).digest("hex").slice(0, 12);
   },
 };
-
-// ============================================================================
-// STATEFUL CIRCUIT BREAKER PATTERN (CLOSED, OPEN, HALF-OPEN)
-// ============================================================================
 
 export class UpstreamCircuitBreaker {
   private state: "CLOSED" | "OPEN" | "HALF_OPEN" = "CLOSED";
@@ -397,7 +480,6 @@ export class UpstreamCircuitBreaker {
 
   public async execute(url: string, options: RequestInit): Promise<Response> {
     this.updateState();
-
     if (this.state === "OPEN") {
       return new Response(
         JSON.stringify({
@@ -407,22 +489,13 @@ export class UpstreamCircuitBreaker {
         { status: 503, headers: { "content-type": "application/json" } },
       );
     }
-
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
-
     try {
       const response = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(timeoutId);
-
-      if (response.ok) {
-        this.onSuccess();
-      } else {
-        // Upstream infrastructure/rate limiting failures trigger circuit breaking
-        if (response.status >= 500 || response.status === 429) {
-          this.onFailure();
-        }
-      }
+      if (response.ok) this.onSuccess();
+      else if (response.status >= 500 || response.status === 429) this.onFailure();
       return response;
     } catch (err) {
       clearTimeout(timeoutId);
@@ -461,6 +534,6 @@ export class UpstreamCircuitBreaker {
       console.error("[CircuitBreaker] Failure detected in HALF_OPEN. Breaker reverted to OPEN.");
     }
   }
-}
+};
 
 export const globalCircuitBreaker = new UpstreamCircuitBreaker();

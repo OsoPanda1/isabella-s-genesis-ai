@@ -17,15 +17,15 @@ describe("security response headers", () => {
     expect(response.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
   });
 
-  it("keeps strict CSP in report-only mode until nonces are wired", () => {
+  it("enforces strict CSP and does not emit fake nonces", () => {
     const response = withSecurityHeaders(new Response("ok"));
     const csp = response.headers.get("Content-Security-Policy") ?? "";
-    const reportOnly = response.headers.get("Content-Security-Policy-Report-Only") ?? "";
+    const reportOnly = response.headers.get("Content-Security-Policy-Report-Only");
 
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("form-action 'self'");
     expect(csp).toContain("upgrade-insecure-requests");
-    expect(reportOnly).toContain("script-src 'self' 'nonce-{REQUEST_NONCE}'");
-    expect(reportOnly).not.toContain("unsafe-inline");
+    expect(csp).toContain("script-src");
+    expect(reportOnly).toBeNull();
   });
 });

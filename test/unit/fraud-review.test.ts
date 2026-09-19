@@ -32,7 +32,10 @@ describe("risk scoring determinista", () => {
   });
 
   it("cuenta sancionada bloquea", () => {
-    const evaluation = evaluateWithdrawalRisk({ ...BASE_INPUT, sanctioned: true });
+    const evaluation = evaluateWithdrawalRisk({
+      ...BASE_INPUT,
+      sanctioned: true,
+    });
     expect(evaluation.status).toBe("fraud_detected");
     expect(evaluation.signals).toContain("account-flagged");
   });
@@ -48,7 +51,10 @@ describe("risk scoring determinista", () => {
   });
 
   it("ráfaga de retiros va a hold", () => {
-    const evaluation = evaluateWithdrawalRisk({ ...BASE_INPUT, withdrawalsLast24h: 4 });
+    const evaluation = evaluateWithdrawalRisk({
+      ...BASE_INPUT,
+      withdrawalsLast24h: 4,
+    });
     expect(evaluation.status).toBe("hold");
   });
 });
@@ -57,7 +63,10 @@ describe("cola de revisión humana", () => {
   it("decisión de un solo uso: segunda decisión se rechaza", async () => {
     const { createFraudReviewQueue } = await import("@/lib/monetization/fraud-review");
     const queue = createFraudReviewQueue({ audit: () => undefined });
-    const evaluation = evaluateWithdrawalRisk({ ...BASE_INPUT, withdrawalsLast24h: 4 });
+    const evaluation = evaluateWithdrawalRisk({
+      ...BASE_INPUT,
+      withdrawalsLast24h: 4,
+    });
     const opened = queue.open(evaluation, "u_fraud", 5000);
     expect(opened.status).toBe("hold");
 
@@ -70,7 +79,10 @@ describe("cola de revisión humana", () => {
   it("deny congela en fraud_detected", async () => {
     const { createFraudReviewQueue } = await import("@/lib/monetization/fraud-review");
     const queue = createFraudReviewQueue({ audit: () => undefined });
-    const evaluation = evaluateWithdrawalRisk({ ...BASE_INPUT, sanctioned: true });
+    const evaluation = evaluateWithdrawalRisk({
+      ...BASE_INPUT,
+      sanctioned: true,
+    });
     const opened = queue.open(evaluation, "u_fraud", 5000);
     const decided = queue.decide(opened.reviewId, "deny", "rev_1", "Fraude confirmado.");
     expect(decided?.status).toBe("fraud_detected");
@@ -80,7 +92,10 @@ describe("cola de revisión humana", () => {
 describe("payout guard", () => {
   function approvedCase(amountCents: number, reviewer: string) {
     const queue = createFraudReviewQueue({ audit: () => undefined });
-    const evaluation = evaluateWithdrawalRisk({ ...BASE_INPUT, withdrawalsLast24h: 4 });
+    const evaluation = evaluateWithdrawalRisk({
+      ...BASE_INPUT,
+      withdrawalsLast24h: 4,
+    });
     const opened = queue.open(evaluation, "u_fraud", amountCents);
     queue.decide(opened.reviewId, "approve", reviewer, "OK.");
     return { queue, reviewId: opened.reviewId };
@@ -137,7 +152,10 @@ describe("payout guard", () => {
 
   it("hold sin decisión no autoriza", () => {
     const queue = createFraudReviewQueue({ audit: () => undefined });
-    const evaluation = evaluateWithdrawalRisk({ ...BASE_INPUT, withdrawalsLast24h: 4 });
+    const evaluation = evaluateWithdrawalRisk({
+      ...BASE_INPUT,
+      withdrawalsLast24h: 4,
+    });
     const opened = queue.open(evaluation, "u_fraud", 5000);
     const result = assertPayoutAllowed(
       {

@@ -141,8 +141,40 @@ export function ObservabilityPanel() {
     );
   }
 
+  const systemState =
+    coreStats.error > 0 ? "requires_attention" : coreStats.warning > 0 ? "degraded" : "operational";
+  const systemStateLabel =
+    systemState === "operational"
+      ? "Operativo"
+      : systemState === "degraded"
+        ? "Degradado"
+        : "Requiere atención";
+
   return (
     <div className="space-y-6 text-foreground font-sans">
+      <div
+        className="flex flex-col gap-3 rounded-2xl border border-border/20 bg-secondary/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            className={`size-2.5 rounded-full ${systemState === "operational" ? "bg-emerald-500" : systemState === "degraded" ? "bg-amber-400" : "bg-rose-500"}`}
+          />
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Estado CROWN / AEGIS
+            </p>
+            <p className="font-mono text-sm font-semibold text-foreground">{systemStateLabel}</p>
+          </div>
+        </div>
+        <p className="font-mono text-[10px] text-muted-foreground">
+          {coreStats.active} activos · {coreStats.warning} advertencias · {coreStats.error} errores
+          · {coreStats.restarting} reiniciando
+        </p>
+      </div>
+
       {/* SECTION 1: GLOBAL TELEMETRY BAR & QUICK METRICS */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="p-4 rounded-2xl bg-secondary/10 border border-border/15 flex items-center justify-between">

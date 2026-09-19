@@ -72,10 +72,10 @@ export function createBookpiEngine(repository: BookpiRepository = createBookpiRe
         if (!req.userId) return { success: false, error: "Usuario requerido en batch." };
         if (req.cost < 0) return { success: false, error: "Costo negativo no admitido." };
       }
-      
+
       // Ensure the repository has batchAppend, otherwise fallback to sequential
-      if (typeof (repository as any).batchAppend === 'function') {
-        const write = (repository as any).batchAppend(requests);
+      if (typeof repository.batchAppend === "function") {
+        const write = repository.batchAppend(requests);
         if (!write.success) return { success: false, error: write.error };
         return { success: true, blocks: write.blocks };
       } else {
@@ -83,7 +83,7 @@ export function createBookpiEngine(repository: BookpiRepository = createBookpiRe
         for (const req of requests) {
           const write = repository.append(req);
           if (!write.success) return { success: false, error: write.error };
-          blocks.push((write as any).block);
+          blocks.push(write.block);
         }
         return { success: true, blocks };
       }
@@ -91,24 +91,31 @@ export function createBookpiEngine(repository: BookpiRepository = createBookpiRe
 
     query(
       tenantId: string,
-      filter: { category?: LedgerCategory; userId?: string; fromDate?: Date; toDate?: Date }
+      filter: {
+        category?: LedgerCategory;
+        userId?: string;
+        fromDate?: Date;
+        toDate?: Date;
+      },
     ): BlockPIBlock[] | Promise<BlockPIBlock[]> {
-      if (typeof (repository as any).query === 'function') {
-        return (repository as any).query(tenantId, filter);
+      if (typeof repository.query === "function") {
+        return repository.query(tenantId, filter);
       }
       // Fallback for repositories without query
       let blocks = repository.list(tenantId);
       // Handle promises from list if postgres
       if (blocks instanceof Promise) {
-        return blocks.then(b => {
+        return blocks.then((b) => {
           if (filter.category) b = b.filter((x: BlockPIBlock) => x.category === filter.category);
           if (filter.userId) b = b.filter((x: BlockPIBlock) => x.userId === filter.userId);
-          if (filter.fromDate) b = b.filter((x: BlockPIBlock) => new Date(x.timestamp) >= filter.fromDate!);
-          if (filter.toDate) b = b.filter((x: BlockPIBlock) => new Date(x.timestamp) <= filter.toDate!);
+          if (filter.fromDate)
+            b = b.filter((x: BlockPIBlock) => new Date(x.timestamp) >= filter.fromDate!);
+          if (filter.toDate)
+            b = b.filter((x: BlockPIBlock) => new Date(x.timestamp) <= filter.toDate!);
           return b;
         });
       }
-      
+
       if (filter.category) blocks = blocks.filter((b) => b.category === filter.category);
       if (filter.userId) blocks = blocks.filter((b) => b.userId === filter.userId);
       if (filter.fromDate) blocks = blocks.filter((b) => new Date(b.timestamp) >= filter.fromDate!);
@@ -118,19 +125,23 @@ export function createBookpiEngine(repository: BookpiRepository = createBookpiRe
 
     exportLedger(tenantId: string): string | Promise<string> {
       const blocks = repository.list(tenantId);
-      
+
       const formatResult = (b: BlockPIBlock[]) => {
         const latestBlock = b.length > 0 ? b[b.length - 1] : null;
-        
+
         // Simple hash of all block hashes for a naive summary (real summary would use Merkle root)
-        const cryptoSummary = b.reduce(
-          (acc, block) => acc + block.blockHash, 
-          ""
-        );
-        const summaryHash = b.length > 0 ? Array.from(new Uint8Array(
-          // simple pseudo hash for the summary just as an example
-          Buffer.from(cryptoSummary).slice(0, 32)
-        )).map(byte => byte.toString(16).padStart(2, '0')).join('') : null;
+        const cryptoSummary = b.reduce((acc, block) => acc + block.blockHash, "");
+        const summaryHash =
+          b.length > 0
+            ? Array.from(
+                new Uint8Array(
+                  // simple pseudo hash for the summary just as an example
+                  Buffer.from(cryptoSummary).slice(0, 32),
+                ),
+              )
+                .map((byte) => byte.toString(16).padStart(2, "0"))
+                .join("")
+            : null;
 
         const payload = {
           tenantId,
@@ -138,9 +149,9 @@ export function createBookpiEngine(repository: BookpiRepository = createBookpiRe
           recordCount: b.length,
           cryptographicSummary: {
             latestBlockHash: latestBlock ? latestBlock.blockHash : null,
-            chainSummaryHash: summaryHash
+            chainSummaryHash: summaryHash,
           },
-          ledger: b
+          ledger: b,
         };
         return JSON.stringify(payload, null, 2);
       };
@@ -148,31 +159,52 @@ export function createBookpiEngine(repository: BookpiRepository = createBookpiRe
       if (blocks instanceof Promise) {
         return blocks.then(formatResult);
       }
-      
+
       return formatResult(blocks);
     },
 
-    prune(tenantId: string, maxAgeMs: number): { success: boolean; prunedCount?: number; error?: string } | Promise<{ success: boolean; prunedCount?: number; error?: string }> {
+    prune(
+      tenantId: string,
+      maxAgeMs: number,
+    ):
+      | { success: boolean; prunedCount?: number; error?: string }
+      | Promise<{ success: boolean; prunedCount?: number; error?: string }> {
       if (maxAgeMs < 0) return { success: false, error: "maxAgeMs debe ser >= 0" };
-      if (typeof (repository as any).prune === 'function') {
-        return (repository as any).prune(tenantId, maxAgeMs);
+      if (typeof repository.prune === "function") {
+        return repository.prune(tenantId, maxAgeMs);
       }
-      return { success: false, error: "prune no soportado en este repositorio" };
+      return {
+        success: false,
+        error: "prune no soportado en este repositorio",
+      };
     },
 
-    pruneInactiveTenants(inactiveDays: number): { success: boolean; prunedTenants?: string[]; error?: string } | Promise<{ success: boolean; prunedTenants?: string[]; error?: string }> {
+    pruneInactiveTenants(inactiveDays: number):
+      | { success: boolean; prunedTenants?: string[]; error?: string }
+      | Promise<{
+          success: boolean;
+          prunedTenants?: string[];
+          error?: string;
+        }> {
       if (inactiveDays <= 0) return { success: false, error: "inactiveDays must be > 0" };
-      if (typeof (repository as any).pruneInactive === 'function') {
-        return (repository as any).pruneInactive(inactiveDays);
+      if (typeof repository.pruneInactive === "function") {
+        return repository.pruneInactive(inactiveDays);
       }
-      return { success: false, error: "pruneInactive not supported by this repository" };
+      return {
+        success: false,
+        error: "pruneInactive not supported by this repository",
+      };
     },
 
     refund(request: BookpiRefundRequest): { success: boolean; error?: string } {
       return repository.refund(request.index, request.tenantId);
     },
 
-    verifyIntegrity(): { success: boolean; error?: string; corruptedIndex?: number } {
+    verifyIntegrity(): {
+      success: boolean;
+      error?: string;
+      corruptedIndex?: number;
+    } {
       return repository.verifyIntegrity();
     },
   };

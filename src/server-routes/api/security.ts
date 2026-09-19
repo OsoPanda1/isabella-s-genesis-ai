@@ -184,10 +184,15 @@ export const Route = createFileRoute("/api/security")({
           rawBody = await parseSafeJsonBody(request);
         } catch (e: unknown) {
           const limitError =
-            typeof e === "object" && e !== null && "code" in e && (e as { code: string }).code === "BODY_TOO_LARGE";
+            typeof e === "object" &&
+            e !== null &&
+            "code" in e &&
+            (e as { code: string }).code === "BODY_TOO_LARGE";
           return new Response(
             JSON.stringify({
-              error: limitError ? "Cuerpo de solicitud excede el límite permitido." : "Inyección o payload corrupto detectado.",
+              error: limitError
+                ? "Cuerpo de solicitud excede el límite permitido."
+                : "Inyección o payload corrupto detectado.",
             }),
             {
               status: limitError ? 413 : 400,

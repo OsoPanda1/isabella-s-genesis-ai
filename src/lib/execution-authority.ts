@@ -24,6 +24,7 @@ import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import { evaluateAuthorization } from "./authorization";
 import { evaluatePolicy } from "./policy-engine";
+import { verifyCapabilityToken } from "./capability-tokens";
 import { createToolRegistry, type RegisteredTool } from "./tool-registry";
 import type { MemoryRepository } from "./repositories/memory-repository";
 import type { AuditRepository } from "./repositories/audit-repository";
@@ -49,6 +50,8 @@ export interface ExecutionRequest {
   traceId: string;
   ip: string;
   approvals?: ApprovalGrant[];
+  /** Capability token firmado (alternativa al approval del ledger). */
+  capabilityToken?: string;
 }
 
 export type ExecutionOutcome =
@@ -166,7 +169,10 @@ function validateResult(
     return { valid: false, reason: "Resultado no serializable." };
   }
   if (tool.name === "memory.retrieve" && !Array.isArray(result)) {
-    return { valid: false, reason: "memory.retrieve debe devolver un arreglo." };
+    return {
+      valid: false,
+      reason: "memory.retrieve debe devolver un arreglo.",
+    };
   }
   return { valid: true };
 }
@@ -191,6 +197,13 @@ export function createExecutionAuthority(opts?: {
       actorId: string,
       tenantId: string,
     ): Promise<ApprovalGrant | null>;
+  };
+  /**
+   * Kill switch (§7.1 Charter). Si `tool-execution` está engaged,
+   * toda ejecución se deniega antes de autorizar.
+   */
+  killSwitch?: {
+    isKilled(capability: string): Promise<boolean>;
   };
 }) {
   const registry = createToolRegistry();
@@ -234,7 +247,28 @@ export function createExecutionAuthority(opts?: {
     if (opts?.ledgerAppend) map.set("ledger.record", opts.ledgerAppend);
     if (opts?.storageRead) map.set("storage.read", opts.storageRead);
     if (opts?.identityResolve) map.set("identity.resolve", opts.identityResolve);
-    if (opts?.sandboxRun) map.set("compute.sandbox", opts.sandboxRun);
+    // compute.sandbox: ejecutor inyectado primero; por defecto, VM local
+    // (solo JavaScript puro sin I/O). Runtimes no-JS se deniegan en el
+    // ejecutor (fail-closed honesto, sin contenedor OS real).
+    map.set("compute.sandbox", async (input, ctx) => {
+      if (opts?.sandboxRun) return opts.sandboxRun(input, ctx);
+      const { runNodeVmTask } = await import("./sandbox/node-vm-executor");
+      const params = (input ?? {}) as {
+        code?: unknown;
+        language?: string;
+        timeoutMs?: number;
+      };
+      const result = await runNodeVmTask({
+        code: String(params.code ?? ""),
+        language: params.language,
+        timeoutMs: params.timeoutMs,
+      });
+      return {
+        output: result.output,
+        memoryConsumedBytes: result.memoryConsumedBytes,
+        gasTokensConsumed: result.gasTokensConsumed,
+      };
+    });
     return map;
   }
 
@@ -243,6 +277,23 @@ export function createExecutionAuthority(opts?: {
     registry,
 
     async execute(request: ExecutionRequest): Promise<ExecutionOutcome> {
+      // ── KILL SWITCH: parada de emergencia antes de todo ───────
+      if (opts?.killSwitch) {
+        let killed = false;
+        try {
+          killed = await opts.killSwitch.isKilled("tool-execution");
+        } catch {
+          killed = true; // Sin estado legible: fail-closed.
+        }
+        if (killed) {
+          return {
+            executed: false,
+            reason: "Kill switch activo en 'tool-execution' (emergencia).",
+            stage: "decide",
+          };
+        }
+      }
+
       // ── DECIDE: whitelist Zero Trust ──────────────────────────
       const check = registry.check(request.tool);
       if (!check.allowed) {
@@ -250,7 +301,11 @@ export function createExecutionAuthority(opts?: {
       }
       const tool = registry.lookup(request.tool);
       if (!tool) {
-        return { executed: false, reason: "Herramienta no registrada.", stage: "decide" };
+        return {
+          executed: false,
+          reason: "Herramienta no registrada.",
+          stage: "decide",
+        };
       }
 
       // ── AUTHORIZATION: PDP real ───────────────────────────────
@@ -277,8 +332,19 @@ export function createExecutionAuthority(opts?: {
 
       // ── APPROVAL: política + approval de un solo uso ──────────
       // El consentimiento de la política DERIVA del approval humano vigente
-      // (ledger o grants adjuntos): consentRequired nunca se satisface solo.
+      // (ledger, grants adjuntos o capability token firmado): consentRequired
+      // nunca se satisface solo.
+      const capability =
+        request.capabilityToken !== undefined
+          ? verifyCapabilityToken(request.capabilityToken, {
+              actorId: request.actorId,
+              tenantId: request.tenantId,
+              tool: request.tool,
+              traceId: request.traceId,
+            })
+          : null;
       const hasApproval =
+        capability?.valid === true ||
         (opts?.approvalStore
           ? await opts.approvalStore.has(
               request.traceId,
@@ -309,39 +375,49 @@ export function createExecutionAuthority(opts?: {
       });
       let approvalId: string | null = null;
       if (policy.decision === "denied") {
-        return { executed: false, reason: `Política denegó: ${policy.reason}.`, stage: "approval" };
+        return {
+          executed: false,
+          reason: `Política denegó: ${policy.reason}.`,
+          stage: "approval",
+        };
       }
       if (policy.decision === "requires_approval" || tool.requiresApproval) {
-        const fromStore = opts?.approvalStore
-          ? await opts.approvalStore.consume(
-              request.traceId,
-              request.tool,
-              request.actorId,
-              request.tenantId,
-            )
-          : null;
-        const grant =
-          fromStore ??
-          approvals.consume(request.traceId, request.tool, request.actorId, request.tenantId) ??
-          (request.approvals ?? []).find(
-            (candidate) =>
-              !candidate.consumed &&
-              candidate.traceId === request.traceId &&
-              candidate.tool === request.tool &&
-              candidate.actorId === request.actorId &&
-              candidate.tenantId === request.tenantId &&
-              candidate.expiresAt > Date.now(),
-          ) ??
-          null;
-        if (!grant) {
-          return {
-            executed: false,
-            reason: `Aprobación humana requerida para '${request.tool}' (un solo uso, TTL 5 min).`,
-            stage: "approval",
-          };
+        // El capability token es single-context (ligado a la traza): no se
+        // consume, se audita su jti. Ledger/grants sí son de un solo uso.
+        if (capability?.valid === true && capability.claims) {
+          approvalId = capability.claims.jti;
+        } else {
+          const fromStore = opts?.approvalStore
+            ? await opts.approvalStore.consume(
+                request.traceId,
+                request.tool,
+                request.actorId,
+                request.tenantId,
+              )
+            : null;
+          const grant =
+            fromStore ??
+            approvals.consume(request.traceId, request.tool, request.actorId, request.tenantId) ??
+            (request.approvals ?? []).find(
+              (candidate) =>
+                !candidate.consumed &&
+                candidate.traceId === request.traceId &&
+                candidate.tool === request.tool &&
+                candidate.actorId === request.actorId &&
+                candidate.tenantId === request.tenantId &&
+                candidate.expiresAt > Date.now(),
+            ) ??
+            null;
+          if (!grant) {
+            return {
+              executed: false,
+              reason: `Aprobación humana requerida para '${request.tool}' (un solo uso, TTL 5 min).`,
+              stage: "approval",
+            };
+          }
+          grant.consumed = true;
+          approvalId = grant.approvalId;
         }
-        grant.consumed = true;
-        approvalId = grant.approvalId;
       }
 
       // ── EXECUTION: despacho a ejecutor real ───────────────────
@@ -362,7 +438,11 @@ export function createExecutionAuthority(opts?: {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "unknown";
-        return { executed: false, reason: `Ejecutor falló: ${message}.`, stage: "execution" };
+        return {
+          executed: false,
+          reason: `Ejecutor falló: ${message}.`,
+          stage: "execution",
+        };
       }
 
       // ── VALIDATION ────────────────────────────────────────────
@@ -384,7 +464,7 @@ export function createExecutionAuthority(opts?: {
         };
       }
       const resultHash = hashResult(result);
-      const event = opts.auditRepository.append({
+      const event = await opts.auditRepository.append({
         traceId: request.traceId,
         correlationId: decision.decision_id,
         actorIp: request.ip,
@@ -399,7 +479,13 @@ export function createExecutionAuthority(opts?: {
         }),
       });
 
-      return { executed: true, result, resultHash, approvalId, auditId: event.id };
+      return {
+        executed: true,
+        result,
+        resultHash,
+        approvalId,
+        auditId: event.id,
+      };
     },
   };
 }

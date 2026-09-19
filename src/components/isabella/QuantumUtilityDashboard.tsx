@@ -32,6 +32,7 @@ import { toast } from "sonner";
 import { getSessionToken, ensureSessionToken } from "@/lib/auth-client";
 import type { QupExperimentResult } from "@/lib/qup-v3-engine";
 import { SystemMonitor } from "./SystemMonitor";
+import { QuantumBridgeStatus } from "./QuantumBridgeStatus";
 import { CertificateVerification } from "./CertificateVerification";
 import { GobernanzaVigia } from "./GobernanzaVigia";
 import { QuantumJobMonitor } from "./QuantumJobMonitor";
@@ -81,7 +82,12 @@ const CIRCUIT_TEMPLATES = {
     qubits: 5,
     depth: 12,
     gates: { h: 1, cx: 4, measure: 5 },
-    optimized: { depth: 7, size: 10, cx: 4, gates: { h: 1, cx: 4, measure: 5 } },
+    optimized: {
+      depth: 7,
+      size: 10,
+      cx: 4,
+      gates: { h: 1, cx: 4, measure: 5 },
+    },
     representation:
       "q[0]: ──H───●───────────────M──\n           │\nq[1]: ──────●───●───────────M──\n               │\nq[2]: ──────────●───●───────M──\n                   │\nq[3]: ──────────────●───●───M──\n                       │\nq[4]: ──────────────────●───M──",
   },
@@ -90,7 +96,12 @@ const CIRCUIT_TEMPLATES = {
     qubits: 8,
     depth: 140,
     gates: { h: 8, rx: 16, rz: 16, cx: 28 },
-    optimized: { depth: 45, size: 38, cx: 14, gates: { h: 8, rx: 12, rz: 12, cx: 14 } },
+    optimized: {
+      depth: 45,
+      size: 38,
+      cx: 14,
+      gates: { h: 8, rx: 12, rz: 12, cx: 14 },
+    },
     representation:
       "q[0..7]: ──H───[Rz(γ)]───●───[Rx(β)]───\n                         │\n                         ●───[Rz(γ)]───",
   },
@@ -99,18 +110,53 @@ const CIRCUIT_TEMPLATES = {
     qubits: 4,
     depth: 85,
     gates: { h: 4, ry: 4, rz: 4, cx: 12 },
-    optimized: { depth: 32, size: 16, cx: 6, gates: { h: 4, ry: 4, rz: 4, cx: 6 } },
+    optimized: {
+      depth: 32,
+      size: 16,
+      cx: 6,
+      gates: { h: 4, ry: 4, rz: 4, cx: 6 },
+    },
     representation:
       "q[0]: ──H───[Rz(x0)]───●───────[Ry(w0)]───M──\n                       │\nq[1]: ──H───[Rz(x1)]───●───●───[Ry(w1)]───M──\n                           │\nq[2]: ──H───[Rz(x2)]───────●───[Ry(w2)]───M──",
   },
 };
 
 const INITIAL_EXECUTION_METRICS = [
-  { run: "Ejec. 1", compilerLatency: 120, executionLatency: 850, fidelity: 94.2, noiseLevel: 5.8 },
-  { run: "Ejec. 2", compilerLatency: 145, executionLatency: 910, fidelity: 95.8, noiseLevel: 4.2 },
-  { run: "Ejec. 3", compilerLatency: 190, executionLatency: 1100, fidelity: 97.4, noiseLevel: 2.6 },
-  { run: "Ejec. 4", compilerLatency: 90, executionLatency: 750, fidelity: 93.1, noiseLevel: 6.9 },
-  { run: "Ejec. 5", compilerLatency: 210, executionLatency: 1350, fidelity: 98.6, noiseLevel: 1.4 },
+  {
+    run: "Ejec. 1",
+    compilerLatency: 120,
+    executionLatency: 850,
+    fidelity: 94.2,
+    noiseLevel: 5.8,
+  },
+  {
+    run: "Ejec. 2",
+    compilerLatency: 145,
+    executionLatency: 910,
+    fidelity: 95.8,
+    noiseLevel: 4.2,
+  },
+  {
+    run: "Ejec. 3",
+    compilerLatency: 190,
+    executionLatency: 1100,
+    fidelity: 97.4,
+    noiseLevel: 2.6,
+  },
+  {
+    run: "Ejec. 4",
+    compilerLatency: 90,
+    executionLatency: 750,
+    fidelity: 93.1,
+    noiseLevel: 6.9,
+  },
+  {
+    run: "Ejec. 5",
+    compilerLatency: 210,
+    executionLatency: 1350,
+    fidelity: 98.6,
+    noiseLevel: 1.4,
+  },
 ];
 
 const INITIAL_DEPTH_EFFICIENCY_DATA = [
@@ -200,7 +246,9 @@ export function QuantumUtilityDashboard() {
           token = await ensureSessionToken();
         } catch {
           addLog("OIDC manual cancelado. Solicitando credencial dev-session de fallback...");
-          const devRes = await fetch("/api/db?action=dev-session", { method: "POST" });
+          const devRes = await fetch("/api/db?action=dev-session", {
+            method: "POST",
+          });
           if (devRes.ok) {
             const devData = await devRes.json();
             token = devData.token;
@@ -368,6 +416,9 @@ export function QuantumUtilityDashboard() {
 
       {/* COMPACT KUBERNETES SYSTEM MONITOR */}
       <SystemMonitor />
+
+      {/* QUANTUM BRIDGE STATUS & OBSERVABILITY */}
+      <QuantumBridgeStatus />
 
       {/* PRIMARY CONTROLLER GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -930,7 +981,9 @@ export function QuantumUtilityDashboard() {
                         <div className="w-full bg-black/40 h-1.5 rounded-full overflow-hidden">
                           <div
                             className="bg-red-500 h-full"
-                            style={{ width: `${resultData.runtime.classicalLoss * 100}%` }}
+                            style={{
+                              width: `${resultData.runtime.classicalLoss * 100}%`,
+                            }}
                           />
                         </div>
                       </div>
@@ -945,7 +998,9 @@ export function QuantumUtilityDashboard() {
                         <div className="w-full bg-black/40 h-1.5 rounded-full overflow-hidden">
                           <div
                             className="bg-blue-400 h-full"
-                            style={{ width: `${resultData.runtime.classicalAccuracy * 100}%` }}
+                            style={{
+                              width: `${resultData.runtime.classicalAccuracy * 100}%`,
+                            }}
                           />
                         </div>
                       </div>
@@ -960,7 +1015,9 @@ export function QuantumUtilityDashboard() {
                         <div className="w-full bg-black/40 h-1.5 rounded-full overflow-hidden">
                           <div
                             className="bg-emerald-400 h-full"
-                            style={{ width: `${resultData.runtime.quantumFidelity * 100}%` }}
+                            style={{
+                              width: `${resultData.runtime.quantumFidelity * 100}%`,
+                            }}
                           />
                         </div>
                       </div>
@@ -1160,7 +1217,10 @@ export function QuantumUtilityDashboard() {
                       <XAxis dataKey="run" tick={{ fill: "#9ca3af", fontSize: 9 }} />
                       <YAxis tick={{ fill: "#9ca3af", fontSize: 9 }} />
                       <Tooltip
-                        contentStyle={{ backgroundColor: "#13151f", borderColor: "#2d2f3d" }}
+                        contentStyle={{
+                          backgroundColor: "#13151f",
+                          borderColor: "#2d2f3d",
+                        }}
                       />
                       <Legend wrapperStyle={{ fontSize: 9 }} />
                       <Bar
@@ -1195,7 +1255,10 @@ export function QuantumUtilityDashboard() {
                       <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 9 }} />
                       <YAxis tick={{ fill: "#9ca3af", fontSize: 9 }} />
                       <Tooltip
-                        contentStyle={{ backgroundColor: "#13151f", borderColor: "#2d2f3d" }}
+                        contentStyle={{
+                          backgroundColor: "#13151f",
+                          borderColor: "#2d2f3d",
+                        }}
                       />
                       <Legend wrapperStyle={{ fontSize: 9 }} />
                       <Line

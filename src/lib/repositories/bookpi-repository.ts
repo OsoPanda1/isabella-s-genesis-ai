@@ -20,7 +20,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
-import { config } from "../config";
+import { config, isStorageProviderExplicitlyDeclared } from "../config";
 import { canonicalBookPiPayload } from "../bookpi/canonical-payload";
 import {
   getSigningAlgorithm,
@@ -72,7 +72,11 @@ function toCents(value: number): string {
 }
 
 /** Halla un bloque por índice dentro del tenant (frontera de tenant obligatoria). */
-function findTenantBlock(blocks: BlockPIBlock[], tenantId: string, index: number): BlockPIBlock | null {
+function findTenantBlock(
+  blocks: BlockPIBlock[],
+  tenantId: string,
+  index: number,
+): BlockPIBlock | null {
   return blocks.find((b) => b.tenantId === tenantId && b.index === index) ?? null;
 }
 
@@ -82,13 +86,28 @@ function findTenantBlock(blocks: BlockPIBlock[], tenantId: string, index: number
  */
 export function createBookpiRepository(storePath: string = STORE_PATH) {
   const runtime = config();
-  if (
+  const isProductionLike =
+    runtime.NODE_ENV === "production" ||
     runtime.ISABELLA_RUNTIME_MODE === "production" ||
-    runtime.ISABELLA_RUNTIME_MODE === "staging"
-  ) {
+    runtime.ISABELLA_RUNTIME_MODE === "staging";
+  if (isProductionLike) {
     throw new Error(
       "JSON BookPI persistence is disabled in staging and production. Use createBookpiPostgresRepository().",
     );
+  }
+
+  // P0-15: aunque el modo no sea production-like, un proveedor de estado
+  // autoritativo DECLARADO (postgres|neon) invalida de plano el JSON: nunca
+  // se puede caer a fichero cuando la autoridad durable es PostgreSQL.
+  if (isStorageProviderExplicitlyDeclared()) {
+    const provider = (runtime as unknown as Record<string, unknown>).ISABELLA_STORAGE_PROVIDER;
+    const normalized = typeof provider === "string" ? provider.trim().toLowerCase() : "";
+    if (["postgres", "neon"].includes(normalized)) {
+      throw new Error(
+        "JSON BookPI persistence is disabled when ISABELLA_STORAGE_PROVIDER is " +
+          `${normalized}. Financial state must live in the authoritative PostgreSQL database.`,
+      );
+    }
   }
 
   function loadStore(): BookPIStoreFile {
@@ -124,7 +143,9 @@ export function createBookpiRepository(storePath: string = STORE_PATH) {
 
   return {
     list(tenantId: string): BlockPIBlock[] {
-      return loadStore().blocks.filter((b) => b.tenantId === tenantId).sort((a, b) => a.index - b.index);
+      return loadStore()
+        .blocks.filter((b) => b.tenantId === tenantId)
+        .sort((a, b) => a.index - b.index);
     },
 
     full(): BlockPIBlock[] {
@@ -141,13 +162,14 @@ export function createBookpiRepository(storePath: string = STORE_PATH) {
       tokens: number;
     }): { success: true; block: BlockPIBlock } | { success: false; error: string } {
       if (input.cost < 0) return { success: false, error: "Costo negativo no admitido." };
-      if (isSimulatedAlgorithm()) return { success: false, error: "Algoritmo simulado no permitido." };
+      if (isSimulatedAlgorithm())
+        return { success: false, error: "Algoritmo simulado no permitido." };
       const store = loadStore();
-      
+
       const tenantBlocks = store.blocks.filter((b) => b.tenantId === input.tenantId);
       const prev = tenantBlocks[tenantBlocks.length - 1];
       const index = tenantBlocks.length;
-      
+
       const timestamp = new Date().toISOString();
       const previousHash = prev?.blockHash ?? store.genesisPreviousHash;
       const nonce = crypto.randomUUID();
@@ -175,26 +197,29 @@ export function createBookpiRepository(storePath: string = STORE_PATH) {
       return { success: true, block };
     },
 
-    batchAppend(inputs: Array<{
-      tenantId: string;
-      userId: string;
-      operation: string;
-      category: LedgerCategory;
-      cost: number;
-      tokens: number;
-    }>): { success: true; blocks: BlockPIBlock[] } | { success: false; error: string } {
-      if (isSimulatedAlgorithm()) return { success: false, error: "Algoritmo simulado no permitido." };
+    batchAppend(
+      inputs: Array<{
+        tenantId: string;
+        userId: string;
+        operation: string;
+        category: LedgerCategory;
+        cost: number;
+        tokens: number;
+      }>,
+    ): { success: true; blocks: BlockPIBlock[] } | { success: false; error: string } {
+      if (isSimulatedAlgorithm())
+        return { success: false, error: "Algoritmo simulado no permitido." };
       const store = loadStore();
       const newBlocks: BlockPIBlock[] = [];
-      
+
       for (const input of inputs) {
         if (input.cost < 0) return { success: false, error: "Costo negativo no admitido." };
-        
+
         // Use updated store state including previously appended blocks in this batch
         const tenantBlocks = store.blocks.filter((b) => b.tenantId === input.tenantId);
         const prev = tenantBlocks[tenantBlocks.length - 1];
         const index = tenantBlocks.length;
-        
+
         const timestamp = new Date().toISOString();
         const previousHash = prev?.blockHash ?? store.genesisPreviousHash;
         const nonce = crypto.randomUUID();
@@ -219,14 +244,19 @@ export function createBookpiRepository(storePath: string = STORE_PATH) {
         store.blocks.push(block);
         newBlocks.push(block);
       }
-      
+
       saveStore(store);
       return { success: true, blocks: newBlocks };
     },
 
     query(
       tenantId: string,
-      filter: { category?: LedgerCategory; userId?: string; fromDate?: Date; toDate?: Date }
+      filter: {
+        category?: LedgerCategory;
+        userId?: string;
+        fromDate?: Date;
+        toDate?: Date;
+      },
     ): BlockPIBlock[] {
       let blocks = this.list(tenantId);
       if (filter.category) blocks = blocks.filter((b) => b.category === filter.category);
@@ -236,27 +266,42 @@ export function createBookpiRepository(storePath: string = STORE_PATH) {
       return blocks;
     },
 
-    prune(tenantId: string, maxAgeMs: number): { success: boolean; prunedCount: number; error?: string } {
-      if (isSimulatedAlgorithm()) return { success: false, error: "Algoritmo simulado no permitido.", prunedCount: 0 };
-      if (maxAgeMs < 0) return { success: false, error: "maxAgeMs debe ser >= 0", prunedCount: 0 };
-      
+    prune(
+      tenantId: string,
+      maxAgeMs: number,
+    ): { success: boolean; prunedCount: number; error?: string } {
+      if (isSimulatedAlgorithm())
+        return {
+          success: false,
+          error: "Algoritmo simulado no permitido.",
+          prunedCount: 0,
+        };
+      if (maxAgeMs < 0)
+        return {
+          success: false,
+          error: "maxAgeMs debe ser >= 0",
+          prunedCount: 0,
+        };
+
       const store = loadStore();
       const allBlocks = store.blocks;
-      const tenantBlocks = allBlocks.filter((b) => b.tenantId === tenantId).sort((a, b) => a.index - b.index);
-      
+      const tenantBlocks = allBlocks
+        .filter((b) => b.tenantId === tenantId)
+        .sort((a, b) => a.index - b.index);
+
       const cutoff = Date.now() - maxAgeMs;
       const blocksToKeep = tenantBlocks.filter((b) => new Date(b.timestamp).getTime() > cutoff);
       const prunedCount = tenantBlocks.length - blocksToKeep.length;
-      
+
       if (prunedCount === 0) return { success: true, prunedCount: 0 };
-      
+
       // Rewrite chain hashes
       let prevHash = store.genesisPreviousHash;
       for (let i = 0; i < blocksToKeep.length; i++) {
         const block = blocksToKeep[i];
         block.index = i;
         block.previousHash = prevHash;
-        
+
         const base: Omit<BlockPIBlock, "blockHash"> = {
           index: block.index,
           timestamp: block.timestamp,
@@ -276,17 +321,21 @@ export function createBookpiRepository(storePath: string = STORE_PATH) {
         block.pqcSignature = signBlockHash(block.blockHash);
         prevHash = block.blockHash;
       }
-      
+
       store.blocks = allBlocks.filter((b) => b.tenantId !== tenantId).concat(blocksToKeep);
       saveStore(store);
       return { success: true, prunedCount };
     },
 
-    pruneInactive(inactiveDays: number): { success: boolean; prunedTenants: string[]; error?: string } {
+    pruneInactive(inactiveDays: number): {
+      success: boolean;
+      prunedTenants: string[];
+      error?: string;
+    } {
       const store = loadStore();
       const now = Date.now();
       const inactiveMs = inactiveDays * 24 * 60 * 60 * 1000;
-      
+
       // Group by tenant
       const tenantLastActivity = new Map<string, number>();
       for (const block of store.blocks) {
@@ -296,19 +345,19 @@ export function createBookpiRepository(storePath: string = STORE_PATH) {
           tenantLastActivity.set(block.tenantId, time);
         }
       }
-      
+
       const tenantsToPrune: string[] = [];
       for (const [tenantId, lastActivity] of tenantLastActivity.entries()) {
         if (now - lastActivity > inactiveMs) {
           tenantsToPrune.push(tenantId);
         }
       }
-      
+
       if (tenantsToPrune.length > 0) {
         store.blocks = store.blocks.filter((b) => !tenantsToPrune.includes(b.tenantId));
         saveStore(store);
       }
-      
+
       return { success: true, prunedTenants: tenantsToPrune };
     },
 
@@ -323,7 +372,8 @@ export function createBookpiRepository(storePath: string = STORE_PATH) {
         (b) => b.tenantId === tenantId && b.operation === `refund_of_${target.index}`,
       );
       if (alreadyRefunded) return { success: false, error: "Ya refundido." };
-      if (isSimulatedAlgorithm()) return { success: false, error: "Algoritmo simulado no permitido." };
+      if (isSimulatedAlgorithm())
+        return { success: false, error: "Algoritmo simulado no permitido." };
 
       const tenantBlocks = store.blocks.filter((b) => b.tenantId === tenantId);
       const prev = tenantBlocks[tenantBlocks.length - 1];
@@ -353,30 +403,58 @@ export function createBookpiRepository(storePath: string = STORE_PATH) {
     },
 
     /** Verifica la integridad de toda la cadena. */
-    verifyIntegrity(tenantId?: string): { success: boolean; error?: string; corruptedIndex?: number } {
+    verifyIntegrity(tenantId?: string): {
+      success: boolean;
+      error?: string;
+      corruptedIndex?: number;
+    } {
       const store = loadStore();
-      const tenantIds = tenantId 
-        ? [tenantId] 
-        : Array.from(new Set(store.blocks.map(b => b.tenantId)));
-        
+      const tenantIds = tenantId
+        ? [tenantId]
+        : Array.from(new Set(store.blocks.map((b) => b.tenantId)));
+
       for (const tId of tenantIds) {
-        const tenantBlocks = store.blocks.filter(b => b.tenantId === tId).sort((a, b) => a.index - b.index);
+        const tenantBlocks = store.blocks
+          .filter((b) => b.tenantId === tId)
+          .sort((a, b) => a.index - b.index);
         let prev = store.genesisPreviousHash;
-        
+
         for (let i = 0; i < tenantBlocks.length; i++) {
           const block = tenantBlocks[i];
-          if (!block) return { success: false, error: "Bloque ausente.", corruptedIndex: i };
-          if (block.index !== i) return { success: false, error: "Índice incorrecto.", corruptedIndex: i };
+          if (!block)
+            return {
+              success: false,
+              error: "Bloque ausente.",
+              corruptedIndex: i,
+            };
+          if (block.index !== i)
+            return {
+              success: false,
+              error: "Índice incorrecto.",
+              corruptedIndex: i,
+            };
           if (block.previousHash !== prev) {
-            return { success: false, error: "Cadena rota.", corruptedIndex: block.index };
+            return {
+              success: false,
+              error: "Cadena rota.",
+              corruptedIndex: block.index,
+            };
           }
           // §6.1: recomputa con el MISMO payload canónico que append().
           if (computeBlockHash(block) !== block.blockHash) {
-            return { success: false, error: "Bloque alterado.", corruptedIndex: block.index };
+            return {
+              success: false,
+              error: "Bloque alterado.",
+              corruptedIndex: block.index,
+            };
           }
           // §6.5: verifica la firma real (rechaza sin firma o firma inválida).
           if (!verifyBlockSignature(block.blockHash, block.pqcSignature)) {
-            return { success: false, error: "Firma inválida o ausente.", corruptedIndex: block.index };
+            return {
+              success: false,
+              error: "Firma inválida o ausente.",
+              corruptedIndex: block.index,
+            };
           }
           prev = block.blockHash;
         }

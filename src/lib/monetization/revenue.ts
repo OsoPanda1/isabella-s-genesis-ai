@@ -13,18 +13,19 @@ import { PLATFORM_FEE_BASIS_POINTS, type RevenueSplit } from "./types";
  */
 
 export interface ZeroLossRevenueInput {
-  grossPaidCents: number;           // Total amount paid by the consumer upfront (Pre-funded)
-  infrastructureCostCents: number;  // Absolute cost incurred by the platform (AWS/GCP/Quantum backend)
-  refundReserveRatio: number;       // Ratio of user's profit held for chargeback windows (e.g. 0.10)
-  communityShareRatio: number;      // Ratio for territorial node community (e.g. 0.05)
+  grossPaidCents: number; // Total amount paid by the consumer upfront (Pre-funded)
+  infrastructureCostCents: number; // Absolute cost incurred by the platform (AWS/GCP/Quantum backend)
+  refundReserveRatio: number; // Ratio of user's profit held for chargeback windows (e.g. 0.10)
+  communityShareRatio: number; // Ratio for territorial node community (e.g. 0.05)
 }
 
 export function splitZeroLossRevenue(input: ZeroLossRevenueInput): RevenueSplit {
-  const { grossPaidCents, infrastructureCostCents, refundReserveRatio, communityShareRatio } = input;
+  const { grossPaidCents, infrastructureCostCents, refundReserveRatio, communityShareRatio } =
+    input;
 
   if (grossPaidCents < 0) throw new Error("grossPaidCents cannot be negative");
   if (infrastructureCostCents < 0) throw new Error("infrastructureCostCents cannot be negative");
-  
+
   // 1. DEDUCT PLATFORM COSTS FIRST (Zero-Loss Guarantee)
   const netMarginCents = grossPaidCents - infrastructureCostCents;
 
@@ -43,7 +44,6 @@ export function splitZeroLossRevenue(input: ZeroLossRevenueInput): RevenueSplit 
 
   // 2. ALLOCATE PLATFORM FEE FROM NET MARGIN
   const platformFeeCents = Math.round((netMarginCents * PLATFORM_FEE_BASIS_POINTS) / 10_000);
-  const totalPlatformTakeCents = infrastructureCostCents + platformFeeCents;
 
   // 3. ALLOCATE COMMUNITY SHARE
   const communityShareCents = Math.round(netMarginCents * communityShareRatio);
@@ -71,9 +71,9 @@ export function verifyZeroLossSplit(split: RevenueSplit): boolean {
   return (
     split.grossAmountCents ===
     split.infrastructureCostCents +
-    split.platformFeeCents +
-    split.communityShareCents +
-    split.refundReserveCents +
-    split.netUserAmountCents
+      split.platformFeeCents +
+      split.communityShareCents +
+      split.refundReserveCents +
+      split.netUserAmountCents
   );
 }

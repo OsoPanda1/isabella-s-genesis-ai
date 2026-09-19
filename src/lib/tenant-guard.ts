@@ -84,7 +84,11 @@ export function resolveTenantContext(input: TenantGuardInput): TenantGuardResult
     }
   }
 
-  return { context, boundaryOk: true, reason: "Frontera de tenant confirmada." };
+  return {
+    context,
+    boundaryOk: true,
+    reason: "Frontera de tenant confirmada.",
+  };
 }
 
 /**

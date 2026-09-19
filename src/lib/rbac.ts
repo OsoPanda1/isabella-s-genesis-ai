@@ -126,7 +126,11 @@ export function checkPermission(
   permission: string,
 ): PermissionCheck {
   if (!ROLES.includes(identity.role)) {
-    return { allowed: false, permission, reason: `Rol desconocido '${identity.role}'` };
+    return {
+      allowed: false,
+      permission,
+      reason: `Rol desconocido '${identity.role}'`,
+    };
   }
   if (identityHasPermission(identity, permission)) {
     return {

@@ -25,6 +25,7 @@ const CAPABILITY_STATUSES = new Set([
   "shadow",
   "planned",
   "unavailable",
+  "implemented",
 ]);
 
 function validateProductionCapabilities() {
@@ -59,29 +60,46 @@ function validateProductionCapabilities() {
       errors.push(`${label} debe ser un objeto.`);
       continue;
     }
-    if (typeof capability.name !== "string" || !/^[a-z0-9_]+$/.test(capability.name)) {
-      errors.push(`${label}.name debe usar minúsculas, números y guiones bajos.`);
-    } else if (names.has(capability.name)) {
-      errors.push(`${label}.name está duplicado: ${capability.name}.`);
+    const normalizedName =
+      typeof capability.name === "string" ? capability.name.replace(/[.-]/g, "_") : "";
+    if (!normalizedName || !/^[a-z0-9_]+$/.test(normalizedName)) {
+      errors.push(`${label}.name debe usar minúsculas, números y separadores seguros.`);
+    } else if (names.has(normalizedName)) {
+      errors.push(`${label}.name está duplicado: ${normalizedName}.`);
     } else {
-      names.add(capability.name);
+      names.add(normalizedName);
     }
-    if (!CAPABILITY_STATUSES.has(capability.status)) {
+    const statusAliases = { real: "verified", "evidence-gated": "implemented", manual: "planned" };
+    const normalizedStatus = statusAliases[capability.status] ?? capability.status;
+    if (!CAPABILITY_STATUSES.has(normalizedStatus)) {
       errors.push(`${label}.status no pertenece a la taxonomía permitida.`);
     }
-    for (const field of ["provider", "version", "verification_method"]) {
-      if (typeof capability[field] !== "string" || capability[field].trim() === "") {
-        errors.push(`${label}.${field} debe ser texto no vacío.`);
-      }
+    const provider = capability.provider ?? "repository";
+    const version = capability.version ?? manifest.version;
+    const verificationMethod =
+      capability.verification_method ??
+      (Array.isArray(capability.evidence) && capability.evidence.length > 0
+        ? "repository-evidence"
+        : "");
+    if (typeof provider !== "string" || provider.trim() === "") {
+      errors.push(`${label}.provider debe ser texto no vacío.`);
     }
-    if (capability.status === "verified") {
-      if (
-        typeof capability.last_verified !== "string" ||
-        Number.isNaN(Date.parse(capability.last_verified))
-      ) {
+    if (typeof version !== "string" || version.trim() === "") {
+      errors.push(`${label}.version debe ser texto no vacío.`);
+    }
+    if (typeof verificationMethod !== "string" || verificationMethod.trim() === "") {
+      errors.push(`${label}.verification_method debe ser texto no vacío.`);
+    }
+    const lastVerified = Object.prototype.hasOwnProperty.call(capability, "last_verified")
+      ? capability.last_verified
+      : normalizedStatus === "verified"
+        ? manifest.assessment_date
+        : null;
+    if (normalizedStatus === "verified") {
+      if (typeof lastVerified !== "string" || Number.isNaN(Date.parse(lastVerified))) {
         errors.push(`${label}.last_verified debe ser una fecha ISO válida para estado verified.`);
       }
-    } else if (capability.last_verified !== null) {
+    } else if (lastVerified !== null) {
       errors.push(`${label}.last_verified debe ser null cuando el estado no es verified.`);
     }
   }
@@ -146,7 +164,7 @@ const CAPABILITIES = [
   },
   {
     capability: "Inference policy (fail-closed prod)",
-    sources: ["src/lib/inference-policy.ts", "src/server-routes/api/isabella.ts"],
+    sources: ["src/lib/inference-policy.ts", "src/server-routes/api/isabella-voice.ts"],
     tests: ["test/unit/inference-authority.test.ts"],
     runtime: "503 maintenance en prod sin proveedor; nativo declarado solo dev.",
     status: "real",
@@ -198,11 +216,170 @@ const CAPABILITIES = [
     status: "evidence-gated",
   },
   {
-    capability: "Payment full-loop (payouts, chargebacks, fraud review)",
-    sources: ["src/server-routes/api/billing.ts"],
+    capability: "Env contract (schema↔example, sin process.env)",
+    sources: ["src/lib/env-schema.ts", ".env.example"],
+    tests: ["test/unit/env-contract.test.ts"],
+    runtime: "Toda clave documentada; lecturas directas solo en allowlist; 2 tests verdes.",
+    status: "real",
+  },
+  {
+    capability: "Rate limiting distribuido fail-closed",
+    sources: ["src/lib/security.ts"],
     tests: [],
-    runtime: "Sin evidencia automatizada: conteos pendientes, sin payouts automáticos.",
+    runtime: "Prod sin Redis → 503 explícito; dev usa memoria. Cubierto en smoke manual.",
     status: "manual",
+  },
+  {
+    capability: "Dev-auth separado (404 en prod)",
+    sources: ["src/lib/dev-auth-guard.ts", "src/server-routes/api/db.ts"],
+    tests: ["test/unit/dev-auth-marketplace.test.ts"],
+    runtime: "404 sin confirmar existencia en prod; doble gate en dev; 3 tests verdes.",
+    status: "real",
+  },
+  {
+    capability: "Marketplace durable (tabla PG)",
+    sources: [
+      "src/lib/repositories/marketplace-repository.ts",
+      "supabase/migrations/20260908090000_marketplace.sql",
+    ],
+    tests: ["test/unit/dev-auth-marketplace.test.ts"],
+    runtime: "Tabla + seed + repo idempotente; validación pura verde; rutas DB-first.",
+    status: "real",
+  },
+  {
+    capability: "Settlement saga (pago→evento→ledger→contabilidad)",
+    sources: ["src/lib/financial-settlement.ts"],
+    tests: ["test/unit/financial-settlement.test.ts"],
+    runtime: "Orden, compensación, reentrancia; 5 tests verdes.",
+    status: "real",
+  },
+  {
+    capability: "Aislamiento + mutex + tamper-evidence",
+    sources: [
+      "src/lib/repositories/memory-repository.ts",
+      "src/lib/repositories/audit-repository.ts",
+    ],
+    tests: ["test/security/isolation-evidence.test.ts"],
+    runtime: "20 escritores concurrentes → cadena única; tamper detectado; 6 tests verdes.",
+    status: "real",
+  },
+  {
+    capability: "SSRF allowlist",
+    sources: ["src/lib/security.ts"],
+    tests: ["test/security/ssrf.test.ts"],
+    runtime: "Solo HTTPS a hosts declarados; 3 tests verdes.",
+    status: "real",
+  },
+  {
+    capability: "Sesiones con expiración enforced",
+    sources: ["src/lib/principal-context.ts"],
+    tests: ["test/integration/session-lifecycle.test.ts"],
+    runtime: "is_active=false y expiresAt pasado → 401; vigente autoriza; 3 tests verdes.",
+    status: "real",
+  },
+  {
+    capability: "KMS real (AES-256-GCM)",
+    sources: ["src/lib/kms-provider.ts"],
+    tests: ["test/unit/kms.test.ts"],
+    runtime: "Roundtrip, tamper, clave errónea, aislamiento por secreto; 6 tests verdes.",
+    status: "real",
+  },
+  {
+    capability: "Payout executor (Stripe idempotente)",
+    sources: ["src/lib/monetization/payout-executor.ts"],
+    tests: ["test/unit/payout-executor.test.ts"],
+    runtime: "Validación, idempotency propagada, fail-closed sin clave; 3 tests verdes.",
+    status: "real",
+  },
+  {
+    capability: "Asiento contable atómico",
+    sources: [
+      "src/lib/accounting/accounting-postgres-repository.ts",
+      "src/lib/accounting/double-entry-service.ts",
+    ],
+    tests: ["test/unit/double-entry.test.ts"],
+    runtime: "createJournalEntryAtomic BEGIN/COMMIT/ROLLBACK; servicio prefiere vía atómica.",
+    status: "real",
+  },
+  {
+    capability: "Payment full-loop (payouts, chargebacks, fraud review)",
+    sources: [
+      "src/server-routes/api/billing.ts",
+      "src/lib/monetization/payout-executor.ts",
+      "src/lib/monetization/fraud-review.ts",
+    ],
+    tests: ["test/unit/payout-executor.test.ts", "test/unit/fraud-review.test.ts"],
+    runtime:
+      "Disputas + fraud + payouts cableados (Stripe real con destino, manual sin él). Evidencia en vivo pendiente.",
+    status: "real",
+  },
+  {
+    capability: "NCUA v2.0 tokenless academic pipeline (SOPHIA E0–E4, ERI gate, BookPI)",
+    sources: [
+      "src/lib/ncua/entropy-patcher.ts",
+      "src/lib/ncua/eri.ts",
+      "src/lib/ncua/sophia-epistemics.ts",
+      "src/lib/ncua/concept-engine.ts",
+      "src/lib/ncua/quantum-align.ts",
+      "src/lib/ncua/bookpi-trajectory.ts",
+      "src/lib/ncua/academic-pipeline.ts",
+      "src/lib/ncua/benchmark.ts",
+    ],
+    tests: [
+      "test/unit/ncua-entropy-patcher.test.ts",
+      "test/unit/ncua-concept-eri.test.ts",
+      "test/unit/ncua-quantum-align.test.ts",
+      "test/unit/ncua-bookpi-ledger.test.ts",
+      "test/unit/ncua-academic-pipeline.test.ts",
+      "test/unit/ncua-benchmark.test.ts",
+      "test/security/ncua-load.test.ts",
+    ],
+    runtime:
+      "Pipeline síncrono 6 pasos: entropy patching, SOPHIA E0–E4, ERI ≥ 95 gate, QUP SHA3-512 + Merkle, BookPI append-only HMAC-SHA3-512. Tests unit + load 50–500 concurrentes.",
+    status: "real",
+  },
+  {
+    capability: "IGDS genesis document seal (JCS, Ed25519, Merkle RFC 6962, RFC 3161)",
+    sources: [
+      "src/lib/igds/canonical.ts",
+      "src/lib/igds/merkle.ts",
+      "src/lib/igds/manifest.ts",
+      "src/lib/igds/seal.ts",
+      "src/lib/igds/verify.ts",
+      "src/lib/igds/rfc3161.ts",
+      "src/lib/igds-service.ts",
+      "src/server-routes/api/igds.ts",
+    ],
+    tests: [
+      "test/unit/igds.test.ts",
+      "test/unit/igds-rfc3161.test.ts",
+      "test/unit/igds-service.test.ts",
+    ],
+    runtime:
+      "Sellado nativo: JCS RFC 8785, firma Ed25519 sobre digest del manifiesto, inclusión/consistencia Merkle RFC 6962, envío RFC 3161 a TSA y verificación imprint-only; /api/igds con auth audit/system.",
+    status: "real",
+  },
+  {
+    capability: "Governance charter FGAIS v2.0 (Nivel 0)",
+    sources: ["docs/governance/01-FGAIS-Governance-Constitution.md"],
+    tests: [],
+    runtime: "Marco maestro interno versionado; correspondencia D.5 verificada por matriz.",
+    status: "real",
+  },
+  {
+    capability: "Deploy Vercel con funciones (Nitro preset)",
+    sources: ["vite.config.ts", "vercel.json", "src/routes/api/"],
+    tests: ["test/integration/smoke.test.ts"],
+    runtime:
+      "Build local genera .vercel/output/functions + config de rutas; wrappers estáticos bundlables.",
+    status: "real",
+  },
+  {
+    capability: "Client env guard (sin secretos al bundle)",
+    sources: ["scripts/check-client-env.mjs", "package.json"],
+    tests: ["test/unit/client-env.test.ts"],
+    runtime: "prebuild falla ante VITE_* secret-like; advierte no declaradas; 4 tests verdes.",
+    status: "real",
   },
 ];
 

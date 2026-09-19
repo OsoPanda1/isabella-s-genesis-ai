@@ -19,10 +19,19 @@ interface IntegrityResponse {
 }
 
 const INITIAL_STEPS: VerificationStep[] = [
-  { label: "Consultando estado de integridad económica (/api/economic-integrity)", status: "idle" },
-  { label: "Autoridad de firma del ledger disponible (no simulada)", status: "idle" },
+  {
+    label: "Consultando estado de integridad económica (/api/economic-integrity)",
+    status: "idle",
+  },
+  {
+    label: "Autoridad de firma del ledger disponible (no simulada)",
+    status: "idle",
+  },
   { label: "Cadena BookPI válida en la base canónica", status: "idle" },
-  { label: "Proyección económica reconstruible (economic_events)", status: "idle" },
+  {
+    label: "Proyección económica reconstruible (economic_events)",
+    status: "idle",
+  },
 ];
 
 /**

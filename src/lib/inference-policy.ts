@@ -29,7 +29,12 @@ export function resolveInferencePolicy(input: {
   hasProvider: boolean;
 }): InferenceDecision {
   if (input.hasProvider) {
-    return { mode: "PRODUCTION_NORMAL", provider: "gemini", degraded: false, httpStatus: 200 };
+    return {
+      mode: "PRODUCTION_NORMAL",
+      provider: "gemini",
+      degraded: false,
+      httpStatus: 200,
+    };
   }
   if (input.productionLike) {
     return {

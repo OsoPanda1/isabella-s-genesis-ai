@@ -125,24 +125,52 @@ export function SovereignCompliancePanel() {
             </h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 font-mono text-xs">
               <div className="space-y-1">
-                <span className="text-muted-foreground block text-[10px] uppercase">Arquitectura</span>
-                <div className="flex justify-between text-platinum"><span className="text-amber-400">82%</span><span className="text-muted-foreground/60">/ 90%</span></div>
-                <div className="w-full bg-border/20 h-1 rounded-full"><div className="bg-amber-400 h-1 rounded-full" style={{ width: "82%" }}></div></div>
+                <span className="text-muted-foreground block text-[10px] uppercase">
+                  Arquitectura
+                </span>
+                <div className="flex justify-between text-platinum">
+                  <span className="text-amber-400">82%</span>
+                  <span className="text-muted-foreground/60">/ 90%</span>
+                </div>
+                <div className="w-full bg-border/20 h-1 rounded-full">
+                  <div className="bg-amber-400 h-1 rounded-full" style={{ width: "82%" }}></div>
+                </div>
               </div>
               <div className="space-y-1">
-                <span className="text-muted-foreground block text-[10px] uppercase">Seguridad / Identidad</span>
-                <div className="flex justify-between text-platinum"><span className="text-amber-400">78%</span><span className="text-muted-foreground/60">/ 95%</span></div>
-                <div className="w-full bg-border/20 h-1 rounded-full"><div className="bg-amber-400 h-1 rounded-full" style={{ width: "78%" }}></div></div>
+                <span className="text-muted-foreground block text-[10px] uppercase">
+                  Seguridad / Identidad
+                </span>
+                <div className="flex justify-between text-platinum">
+                  <span className="text-amber-400">78%</span>
+                  <span className="text-muted-foreground/60">/ 95%</span>
+                </div>
+                <div className="w-full bg-border/20 h-1 rounded-full">
+                  <div className="bg-amber-400 h-1 rounded-full" style={{ width: "78%" }}></div>
+                </div>
               </div>
               <div className="space-y-1">
-                <span className="text-muted-foreground block text-[10px] uppercase">IA Segura / CROWN</span>
-                <div className="flex justify-between text-platinum"><span className="text-red-400">68%</span><span className="text-muted-foreground/60">/ 95%</span></div>
-                <div className="w-full bg-border/20 h-1 rounded-full"><div className="bg-red-400 h-1 rounded-full" style={{ width: "68%" }}></div></div>
+                <span className="text-muted-foreground block text-[10px] uppercase">
+                  IA Segura / CROWN
+                </span>
+                <div className="flex justify-between text-platinum">
+                  <span className="text-red-400">68%</span>
+                  <span className="text-muted-foreground/60">/ 95%</span>
+                </div>
+                <div className="w-full bg-border/20 h-1 rounded-full">
+                  <div className="bg-red-400 h-1 rounded-full" style={{ width: "68%" }}></div>
+                </div>
               </div>
               <div className="space-y-1">
-                <span className="text-muted-foreground block text-[10px] uppercase">BookPI / DB / Pagos</span>
-                <div className="flex justify-between text-platinum"><span className="text-red-400">65%</span><span className="text-muted-foreground/60">/ 95%</span></div>
-                <div className="w-full bg-border/20 h-1 rounded-full"><div className="bg-red-400 h-1 rounded-full" style={{ width: "65%" }}></div></div>
+                <span className="text-muted-foreground block text-[10px] uppercase">
+                  BookPI / DB / Pagos
+                </span>
+                <div className="flex justify-between text-platinum">
+                  <span className="text-red-400">65%</span>
+                  <span className="text-muted-foreground/60">/ 95%</span>
+                </div>
+                <div className="w-full bg-border/20 h-1 rounded-full">
+                  <div className="bg-red-400 h-1 rounded-full" style={{ width: "65%" }}></div>
+                </div>
               </div>
             </div>
             <div className="mt-4 flex gap-2">

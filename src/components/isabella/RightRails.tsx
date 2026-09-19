@@ -166,7 +166,9 @@ export function RightRails({
   const [argusOpen, setArgusOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [monetizationOpen, setMonetizationOpen] = useState(false);
-  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({ Orquestación: true });
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({
+    Orquestación: true,
+  });
   const [openMonetizationGroups, setOpenMonetizationGroups] = useState<Record<string, boolean>>({
     Economía: true,
     Creador: true,

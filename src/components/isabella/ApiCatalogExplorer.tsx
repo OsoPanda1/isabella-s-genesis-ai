@@ -44,7 +44,12 @@ const AI_ROUTING_STRATEGIES = [
     icon: BrainCircuit,
     color: "text-amber-400",
   },
-  { id: "agentic_swarm", label: "Swarm Multi-Agent (AutoGen)", icon: Bot, color: "text-blue-400" },
+  {
+    id: "agentic_swarm",
+    label: "Swarm Multi-Agent (AutoGen)",
+    icon: Bot,
+    color: "text-blue-400",
+  },
   {
     id: "rag_memory",
     label: "Episodic RAG Memory (MemGPT)",

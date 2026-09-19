@@ -34,7 +34,9 @@ export const Route = createFileRoute("/api/isabella-voice")({
             new Headers({ "content-type": "application/json" }),
           );
           return new Response(
-            JSON.stringify({ error: "El núcleo de síntesis vocal no está configurado." }),
+            JSON.stringify({
+              error: "El núcleo de síntesis vocal no está configurado.",
+            }),
             { status: 500, headers },
           );
         }
@@ -75,7 +77,9 @@ export const Route = createFileRoute("/api/isabella-voice")({
             new Headers({ "content-type": "application/json" }),
           );
           return new Response(
-            JSON.stringify({ error: `Filtro de Contenido Hostil Activo: ${sanitizedText.reason}` }),
+            JSON.stringify({
+              error: `Filtro de Contenido Hostil Activo: ${sanitizedText.reason}`,
+            }),
             { status: 403, headers },
           );
         }

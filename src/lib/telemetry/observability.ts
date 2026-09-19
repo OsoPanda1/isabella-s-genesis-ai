@@ -13,7 +13,7 @@ export interface CoreTelemetryMetric {
 
 export interface ObservabilitySnapshot {
   timestamp: string;
-  throughput: number; // requests/sec
+  throughput: number;
   avgLatencyMs: number;
   anomalyScore: number;
   totalEventsProcessed: number;
@@ -23,161 +23,162 @@ export interface ObservabilitySnapshot {
 
 type TelemetryListener = (snapshot: ObservabilitySnapshot) => void;
 
+export interface LatencyBudget {
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  sampleCount: number;
+}
+
+const LATENCY_SAMPLES = 512;
+
+/**
+ * Runtime observability state.
+ *
+ * This service deliberately contains no synthetic telemetry generator. Values
+ * are zero/unknown until an actual runtime event records them. Infrastructure
+ * metrics such as host CPU, RAM, temperature and Kubernetes nodes belong to an
+ * external metrics provider and must not be fabricated in the application.
+ */
 class ObservabilityEngine {
   private currentSnapshot: ObservabilitySnapshot;
-  private listeners: Set<TelemetryListener> = new Set();
-  private intervalId: NodeJS.Timeout | null = null;
+  private readonly listeners = new Set<TelemetryListener>();
+  private readonly latencySamples: number[] = [];
 
-  constructor() {
-    this.currentSnapshot = this.generateInitialSnapshot();
-    this.startSimulation();
+  public getLatencyBudget(): LatencyBudget {
+    const values = [...this.latencySamples].sort((a, b) => a - b);
+    const percentile = (p: number) =>
+      values.length === 0
+        ? 0
+        : values[Math.min(values.length - 1, Math.ceil(values.length * p) - 1)]!;
+    return {
+      p50Ms: percentile(0.5),
+      p95Ms: percentile(0.95),
+      p99Ms: percentile(0.99),
+      sampleCount: values.length,
+    };
   }
 
-  private generateInitialSnapshot(): ObservabilitySnapshot {
-    const coresRecord = {} as Record<IsabellaCoreId, CoreTelemetryMetric>;
+  constructor() {
+    this.currentSnapshot = this.createEmptySnapshot();
+  }
 
-    // Dynamically list all 24 cores from the module catalog
-    for (const [modId, modMeta] of Object.entries(ISABELLA_MODULE_CATALOG)) {
-      const moduleId = modId as IsabellaModuleId;
-      for (const coreId of modMeta.cores) {
-        coresRecord[coreId] = {
+  private createEmptySnapshot(): ObservabilitySnapshot {
+    const cores = {} as Record<IsabellaCoreId, CoreTelemetryMetric>;
+    for (const [moduleId, metadata] of Object.entries(ISABELLA_MODULE_CATALOG)) {
+      for (const coreId of metadata.cores) {
+        cores[coreId] = {
           id: coreId,
-          moduleId,
-          status: "active",
-          memoryUsageBytes: 15 * 1024 * 1024 + Math.random() * 45 * 1024 * 1024, // 15MB - 60MB
-          stackDepth: Math.floor(5 + Math.random() * 20),
-          temperatureCelsius: 32 + Math.random() * 15, // 32°C - 47°C
-          loadPercentage: 5 + Math.random() * 25, // 5% - 30%
+          moduleId: moduleId as IsabellaModuleId,
+          status: "warning",
+          memoryUsageBytes: 0,
+          stackDepth: 0,
+          temperatureCelsius: 0,
+          loadPercentage: 0,
           errorCount: 0,
         };
       }
     }
-
     return {
       timestamp: new Date().toISOString(),
-      throughput: 12 + Math.random() * 8,
-      avgLatencyMs: 42 + Math.random() * 15,
-      anomalyScore: 0.04,
-      totalEventsProcessed: 14205,
+      throughput: 0,
+      avgLatencyMs: 0,
+      anomalyScore: 0,
+      totalEventsProcessed: 0,
       incidentsCount: 0,
-      cores: coresRecord,
+      cores,
     };
   }
 
-  private startSimulation() {
-    if (typeof window === "undefined" && typeof global === "undefined") return;
-
-    this.intervalId = setInterval(() => {
-      this.updateMetrics();
-    }, 2000);
-  }
-
-  private updateMetrics() {
-    const s = this.currentSnapshot;
-    s.timestamp = new Date().toISOString();
-
-    // Simulate slight variations in global stats
-    s.throughput = Math.max(2, s.throughput + (Math.random() * 6 - 3));
-    s.avgLatencyMs = Math.max(10, s.avgLatencyMs + (Math.random() * 10 - 5));
-    s.totalEventsProcessed += Math.floor(s.throughput * 2);
-
-    // Dynamic variation for each core
-    for (const coreId of Object.keys(s.cores) as IsabellaCoreId[]) {
-      const core = s.cores[coreId];
-      if (core.status === "restarting") {
-        core.status = "active";
-        core.memoryUsageBytes = 12 * 1024 * 1024 + Math.random() * 5 * 1024 * 1024;
-        core.stackDepth = 1;
-        core.temperatureCelsius = 30 + Math.random() * 2;
-        core.loadPercentage = 2;
-      } else {
-        // Random drift
-        const deltaLoad = Math.random() * 12 - 6;
-        core.loadPercentage = Math.max(1, Math.min(99, core.loadPercentage + deltaLoad));
-
-        const deltaMem = Math.random() * 200000 - 90000;
-        core.memoryUsageBytes = Math.max(5 * 1024 * 1024, core.memoryUsageBytes + deltaMem);
-
-        const deltaTemp = core.loadPercentage / 20 + (Math.random() * 2 - 1);
-        core.temperatureCelsius = Math.max(25, Math.min(85, core.temperatureCelsius + deltaTemp));
-
-        core.stackDepth = Math.max(
-          1,
-          Math.min(250, core.stackDepth + Math.floor(Math.random() * 5 - 2)),
-        );
+  private notifyListeners() {
+    const snapshot = structuredClone(this.currentSnapshot);
+    for (const listener of this.listeners) {
+      try {
+        listener(snapshot);
+      } catch (error) {
+        console.error("Error invoking telemetry listener:", error);
       }
     }
-
-    // Notify all active listeners
-    this.notifyListeners();
-  }
-
-  private notifyListeners() {
-    const snapshotCopy = JSON.parse(JSON.stringify(this.currentSnapshot)) as ObservabilitySnapshot;
-    this.listeners.forEach((listener) => {
-      try {
-        listener(snapshotCopy);
-      } catch (err) {
-        console.error("Error invoking telemetry listener:", err);
-      }
-    });
   }
 
   public subscribe(listener: TelemetryListener): () => void {
     this.listeners.add(listener);
-    // Call immediately with initial state
-    listener(JSON.parse(JSON.stringify(this.currentSnapshot)));
-    return () => {
-      this.listeners.delete(listener);
-    };
+    listener(structuredClone(this.currentSnapshot));
+    return () => this.listeners.delete(listener);
   }
 
   public getSnapshot(): ObservabilitySnapshot {
-    return JSON.parse(JSON.stringify(this.currentSnapshot));
+    return structuredClone(this.currentSnapshot);
   }
 
+  /** Records a real observed application event; it does not generate events. */
   public recordEvent(latencyMs: number, score: number) {
+    if (!Number.isFinite(latencyMs) || latencyMs < 0) throw new Error("invalid_latency");
+    if (!Number.isFinite(score)) throw new Error("invalid_anomaly_score");
     const s = this.currentSnapshot;
+    this.latencySamples.push(latencyMs);
+    if (this.latencySamples.length > LATENCY_SAMPLES) this.latencySamples.shift();
+    const previousEvents = s.totalEventsProcessed;
     s.totalEventsProcessed += 1;
-    s.avgLatencyMs = (s.avgLatencyMs * 19 + latencyMs) / 20;
-    s.anomalyScore = (s.anomalyScore * 19 + score) / 20;
+    s.avgLatencyMs =
+      previousEvents === 0
+        ? latencyMs
+        : (s.avgLatencyMs * previousEvents + latencyMs) / s.totalEventsProcessed;
+    s.anomalyScore =
+      previousEvents === 0
+        ? score
+        : (s.anomalyScore * previousEvents + score) / s.totalEventsProcessed;
+    s.timestamp = new Date().toISOString();
+    this.notifyListeners();
+  }
+
+  /** Explicit state updates are only accepted from real runtime instrumentation. */
+  public updateCoreTelemetry(
+    coreId: IsabellaCoreId,
+    telemetry: Partial<Omit<CoreTelemetryMetric, "id" | "moduleId">>,
+  ) {
+    const core = this.currentSnapshot.cores[coreId];
+    if (!core) throw new Error(`unknown_core:${coreId}`);
+    if (
+      telemetry.memoryUsageBytes !== undefined &&
+      (!Number.isFinite(telemetry.memoryUsageBytes) || telemetry.memoryUsageBytes < 0)
+    )
+      throw new Error("invalid_memory");
+    if (
+      telemetry.loadPercentage !== undefined &&
+      (!Number.isFinite(telemetry.loadPercentage) ||
+        telemetry.loadPercentage < 0 ||
+        telemetry.loadPercentage > 100)
+    )
+      throw new Error("invalid_load");
+    Object.assign(core, telemetry);
+    this.currentSnapshot.timestamp = new Date().toISOString();
     this.notifyListeners();
   }
 
   public forceRestartCore(coreId: IsabellaCoreId) {
-    const s = this.currentSnapshot;
-    if (s.cores[coreId]) {
-      s.cores[coreId].status = "restarting";
-      s.cores[coreId].errorCount = 0;
-      this.notifyListeners();
-    }
+    this.updateCoreTelemetry(coreId, { status: "restarting" });
   }
 
   public flagCoreWarning(coreId: IsabellaCoreId, load: number, stack: number) {
-    const s = this.currentSnapshot;
-    if (s.cores[coreId]) {
-      s.cores[coreId].status = "warning";
-      s.cores[coreId].loadPercentage = load;
-      s.cores[coreId].stackDepth = stack;
-      this.notifyListeners();
-    }
+    this.updateCoreTelemetry(coreId, {
+      status: "warning",
+      loadPercentage: load,
+      stackDepth: stack,
+    });
   }
 
   public flagCoreError(coreId: IsabellaCoreId, memory: number) {
-    const s = this.currentSnapshot;
-    if (s.cores[coreId]) {
-      s.cores[coreId].status = "error";
-      s.cores[coreId].errorCount += 1;
-      s.cores[coreId].memoryUsageBytes = memory;
-      this.notifyListeners();
-    }
+    const core = this.currentSnapshot.cores[coreId];
+    this.updateCoreTelemetry(coreId, {
+      status: "error",
+      memoryUsageBytes: memory,
+      errorCount: core.errorCount + 1,
+    });
   }
 
   public dispose() {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
+    // No background simulation/interval exists; nothing to dispose.
   }
 }
 

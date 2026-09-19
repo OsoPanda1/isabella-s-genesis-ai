@@ -18,7 +18,9 @@ export const PecConfigurationSchema = z.object({
 export const QecConfigurationSchema = z.object({
   codeType: z.enum(["surface", "color", "steane"]),
   distance: z.number().min(3).int(),
-  decoder: z.enum(["mwpm", "uf", "tensor-network", "neural-network"]).describe("Minimum Weight Perfect Matching, Union-Find, etc."),
+  decoder: z
+    .enum(["mwpm", "uf", "tensor-network", "neural-network"])
+    .describe("Minimum Weight Perfect Matching, Union-Find, etc."),
   logicalQubits: z.number().int().min(1),
 });
 
@@ -28,7 +30,9 @@ export const SovereignQuantumRuntimeSchema = z.object({
   zne: ZneConfigurationSchema,
   pec: PecConfigurationSchema,
   qec: QecConfigurationSchema,
-  maxExecutionTimeMs: z.number().max(60000, "Max execution time cannot exceed 60 seconds for sovereign nodes"),
+  maxExecutionTimeMs: z
+    .number()
+    .max(60000, "Max execution time cannot exceed 60 seconds for sovereign nodes"),
   territorialNode: z.string(),
   strictIsolation: z.literal(true),
 });

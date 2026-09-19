@@ -26,7 +26,11 @@ describe("OTel exporter durable", () => {
     received = [];
     server = createServer(async (request, response) => {
       const body = await readBody(request);
-      received.push({ url: request.url ?? "", body: JSON.parse(body) });
+      try {
+        if (body) received.push({ url: request.url ?? "", body: JSON.parse(body) });
+      } catch (e) {
+        // Ignore parse errors from interrupted tests
+      }
       response.writeHead(200, { "content-type": "application/json" });
       response.end("{}");
     });
@@ -45,7 +49,9 @@ describe("OTel exporter durable", () => {
     vi.unstubAllEnvs();
     const { resetConfigCache } = await import("@/lib/config");
     resetConfigCache();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (server.listening) {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("entrega un lote OTLP válido al collector", async () => {
@@ -110,7 +116,9 @@ describe("OTel exporter durable", () => {
   });
 
   it("collector caído no rompe (fail-open con error tipado)", async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (server.listening) {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
     const { enqueueOtelLog, flushOtelOutbox } = await import("@/lib/otel-exporter");
     enqueueOtelLog({
       timestamp: new Date().toISOString(),

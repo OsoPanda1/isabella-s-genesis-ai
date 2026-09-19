@@ -59,7 +59,9 @@ export function QuantumJobMonitor() {
         try {
           token = await ensureSessionToken();
         } catch {
-          const devRes = await fetch("/api/db?action=dev-session", { method: "POST" });
+          const devRes = await fetch("/api/db?action=dev-session", {
+            method: "POST",
+          });
           if (devRes.ok) {
             token = (await devRes.json()).token;
           }
@@ -92,7 +94,10 @@ export function QuantumJobMonitor() {
 
       const res = await fetch("/api/db?action=qup-run", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(payload),
       });
 
@@ -256,7 +261,10 @@ export function QuantumJobMonitor() {
                     <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 8.5 }} />
                     <YAxis tick={{ fill: "#9ca3af", fontSize: 8.5 }} domain={[90, 100]} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#13151f", borderColor: "#2d2f3d" }}
+                      contentStyle={{
+                        backgroundColor: "#13151f",
+                        borderColor: "#2d2f3d",
+                      }}
                     />
                     <Bar
                       dataKey="fidelity"

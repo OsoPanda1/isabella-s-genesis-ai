@@ -54,7 +54,10 @@ export async function speakIsabella(text: string): Promise<void> {
 
   const res = await fetch("/api/isabella-voice", {
     method: "POST",
-    headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+    headers: {
+      "content-type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
     signal: controller.signal,
     body: JSON.stringify({ text: text.slice(0, 4000) }),
   });

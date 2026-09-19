@@ -1,10 +1,10 @@
 import { config, getConfigLoadError, resetConfigCache } from "./config";
 import { buildManifest } from "./build-manifest";
 import { capabilityRegistry } from "./capability-registry";
-import { resolveRuntimeMode } from "./runtime-mode";
+import { evaluateProductionAuthorities } from "./production-authority";
 
 /**
- * INTEGRIDAD DEL RUNTIME (src/lib/runtime-integrity.ts)
+ * INTEGRIDAD DEL RUNTIME
  * -----------------------------------------------------------------
  * Verifica versión/schema/config y el registro de capacidades ANTES
  * de arrancar. Aborta (o degrada a modo conservador) si la
@@ -27,25 +27,31 @@ export function verifyRuntimeIntegrity(options?: {
   reloadConfig?: boolean;
 }): IntegrityResult {
   const strict = options?.strict ?? false;
-  if (options?.reloadConfig) {
-    resetConfigCache();
+  try {
+    if (options?.reloadConfig) resetConfigCache();
     config();
-  } else {
-    config(); // fuerza carga
+  } catch {
+    return {
+      status: "failed",
+      mode: "unknown",
+      configError: getConfigLoadError() ?? "Configuración de runtime inválida.",
+      manifestValid: false,
+      requiredCapabilities: {},
+      checkedAt: new Date().toISOString(),
+    };
   }
 
+  const cfg = config();
   const configError = getConfigLoadError();
-  const mode = resolveRuntimeMode(process.env.NODE_ENV);
+  const mode = cfg.ISABELLA_RUNTIME_MODE;
 
-  let status: IntegrityStatus = "ok";
-  if (configError) status = "failed";
+  let status: IntegrityStatus = configError ? "failed" : "ok";
 
   const required = ["auth", "tenancy", "audit", "memory", "bookpi", "crown"];
   const requiredCapabilities: Record<string, string> = {};
   for (const cap of required) {
     const state = capabilityRegistry.stateOf(cap);
     requiredCapabilities[cap] = state;
-    // En modo estricto/producción, las capacidades clave deben estar operativas.
     if (strict && !capabilityRegistry.isOperational(cap)) {
       status = status === "failed" ? "failed" : "degraded";
     }
@@ -53,6 +59,16 @@ export function verifyRuntimeIntegrity(options?: {
 
   const manifest = buildManifest("server");
   const manifestValid = manifest.sourceHash.length === 64;
+  if (!manifestValid) status = "failed";
+
+  try {
+    const authorities = evaluateProductionAuthorities();
+    if (authorities.criticalFailed) {
+      status = status === "failed" ? "failed" : "degraded";
+    }
+  } catch {
+    status = status === "failed" ? "failed" : "degraded";
+  }
 
   return {
     status,
@@ -64,9 +80,6 @@ export function verifyRuntimeIntegrity(options?: {
   };
 }
 
-/**
- * Comprueba que el runtime puede arrancar; lanza si no en modo estricto.
- */
 export function ensureRuntimeReady(strict = false): IntegrityResult {
   const result = verifyRuntimeIntegrity({ strict });
   if (result.status === "failed" && strict) {

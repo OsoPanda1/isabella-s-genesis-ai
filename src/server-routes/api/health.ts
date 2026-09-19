@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { repositoryFactory } from "@/lib/persistence/repository-factory";
-import { config } from "@/lib/config";
-import { isProductionLike, resolveRuntimeMode } from "@/lib/runtime-mode";
+
+const DEPENDENCY_TIMEOUT_MS = 3000;
+
+type HealthCheck = { ok: boolean; latencyMs?: number; error?: string };
 
 export const Route = createFileRoute("/api/health")({
   server: {
@@ -10,102 +11,151 @@ export const Route = createFileRoute("/api/health")({
         const url = new URL(request.url);
         const path = url.pathname;
         const stage = url.searchParams.get("stage");
-
-        // Liveness dedicado: sin dependencias externas, siempre 200 si el proceso vive.
-        // Accesible vía /api/health/live, /api/health?stage=live y ?health=live.
-        if (
-          path.endsWith("/live") ||
-          stage === "live" ||
-          url.searchParams.get("health") === "live"
-        ) {
+        if (path.endsWith("/live") || stage === "live" || url.searchParams.get("health") === "live")
           return liveness();
-        }
         if (
           path.endsWith("/ready") ||
           stage === "ready" ||
           url.searchParams.get("health") === "ready"
-        ) {
+        )
           return readiness();
-        }
-        // Default health
+        if (path.endsWith("/deep")) return deepReadiness();
         return readiness();
       },
     },
   },
 });
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("dependency_timeout")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
+
 async function liveness(): Promise<Response> {
-  // Liveness: process alive, no external dependencies
-  return new Response(
-    JSON.stringify({
-      status: "alive",
-      version: config().CROWN_CONSTITUTION_VERSION ?? "v4.2.0",
-      timestamp: new Date().toISOString(),
-    }),
-    { status: 200, headers: { "content-type": "application/json" } },
-  );
+  return json({
+    status: "alive",
+    service: "isabella-ai-genesis",
+    timestamp: new Date().toISOString(),
+  });
+}
+
+async function deepReadiness(): Promise<Response> {
+  const base = await readiness();
+  const body = (await base.json()) as {
+    status: string;
+    checks: Record<string, HealthCheck>;
+    timestamp: string;
+  };
+  try {
+    const [{ config }, { resolveRuntimeMode }] = await Promise.all([
+      import("@/lib/config"),
+      import("@/lib/runtime-mode"),
+    ]);
+    const cfg = config();
+    body.checks.runtime = { ok: true };
+    body.checks.runtimeMode = {
+      ok: Boolean(resolveRuntimeMode(cfg.ISABELLA_RUNTIME_MODE)),
+    };
+    body.checks.bookpi = { ok: Boolean(cfg.BOOKPI_SIGNING_KEY) };
+  } catch {
+    body.checks.runtime = { ok: false, error: "configuration_unavailable" };
+    body.checks.runtimeMode = { ok: false, error: "configuration_unavailable" };
+    body.checks.bookpi = { ok: false, error: "configuration_unavailable" };
+  }
+  const ok =
+    body.status === "ready" && body.checks.bookpi?.ok === true && body.checks.runtime?.ok === true;
+  return json({ ...body, status: ok ? "ready" : "not_ready" }, ok ? 200 : 503);
+}
+
+async function checkRepositoryHealth(kind: "repository" | "audit"): Promise<HealthCheck> {
+  const started = performance.now();
+  try {
+    const { repositoryFactory } = await withTimeout(
+      import("@/lib/persistence/repository-factory"),
+      DEPENDENCY_TIMEOUT_MS,
+    );
+    const repository =
+      kind === "repository"
+        ? repositoryFactory.getTenantRepository()
+        : repositoryFactory.getAuditRepository();
+    const result = await withTimeout(repository.health(), DEPENDENCY_TIMEOUT_MS);
+    return {
+      ok: result.ok,
+      latencyMs: Number((performance.now() - started).toFixed(2)),
+      ...(result.ok ? {} : { error: "repository_unhealthy" }),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      latencyMs: Number((performance.now() - started).toFixed(2)),
+      error:
+        error instanceof Error && error.message === "dependency_timeout"
+          ? "dependency_timeout"
+          : `${kind}_unavailable`,
+    };
+  }
 }
 
 async function readiness(): Promise<Response> {
-  const checks: Record<string, { ok: boolean; latencyMs?: number; error?: string }> = {};
-  let overallOk = true;
+  const [repository, audit] = await Promise.all([
+    checkRepositoryHealth("repository"),
+    checkRepositoryHealth("audit"),
+  ]);
+  const checks: Record<string, HealthCheck> = { repository, audit };
+  let overallOk = repository.ok && audit.ok;
 
-  // Repository health
   try {
-    const repoHealth = await repositoryFactory.getTenantRepository().health();
-    checks.repository = { ok: repoHealth.ok, latencyMs: repoHealth.latencyMs };
-    if (!repoHealth.ok) overallOk = false;
-  } catch {
-    checks.repository = { ok: false, error: "repository_unavailable" };
-    overallOk = false;
-  }
-
-  // Config health
-  try {
+    const [{ config }, { isProductionLike, resolveRuntimeMode }] = await Promise.all([
+      import("@/lib/config"),
+      import("@/lib/runtime-mode"),
+    ]);
     const cfg = config();
     const mode = resolveRuntimeMode(cfg.ISABELLA_RUNTIME_MODE);
-    const hasDurableAuthority = Boolean(
-      (cfg.SUPABASE_URL && cfg.AUTH_JWT_SECRET) || cfg.DATABASE_URL,
-    );
+    const productionLike = isProductionLike(mode);
+    const hasDurableAuthority = Boolean(cfg.DATABASE_URL);
     checks.config = { ok: hasDurableAuthority };
-    if (!hasDurableAuthority && isProductionLike(mode)) overallOk = false;
+    if (!hasDurableAuthority && productionLike) overallOk = false;
+
+    const genesisConfigured = Boolean(cfg.GEMINI_API_KEY && cfg.CROWN_POLICY_SIGNING_KEY);
+    checks.isabella_genesis = {
+      ok: genesisConfigured,
+      ...(genesisConfigured ? {} : { error: "genesis_service_unconfigured" }),
+    };
+    if (!genesisConfigured && productionLike) overallOk = false;
   } catch {
     checks.config = { ok: false, error: "configuration_unavailable" };
+    checks.isabella_genesis = {
+      ok: false,
+      error: "genesis_service_unavailable",
+    };
     overallOk = false;
   }
 
-  // Audit repository
-  try {
-    const auditHealth = await repositoryFactory.getAuditRepository().health();
-    checks.audit = { ok: auditHealth.ok, latencyMs: auditHealth.latencyMs };
-  } catch {
-    checks.audit = { ok: false, error: "audit_unavailable" };
-  }
-
-  // Isabella AI Genesis Service health
-  try {
-    const cfg = config();
-    // Simulate Isabella AI Genesis connectivity or configuration check
-    const isGenesisConfigured = Boolean(
-      (cfg.LOVABLE_API_KEY || cfg.GEMINI_API_KEY) && cfg.CROWN_POLICY_SIGNING_KEY,
-    );
-    checks.isabella_genesis = { ok: isGenesisConfigured };
-    if (!isGenesisConfigured && isProductionLike(resolveRuntimeMode(cfg.ISABELLA_RUNTIME_MODE))) {
-      checks.isabella_genesis.error = "genesis_service_unconfigured";
-      overallOk = false;
-    }
-  } catch {
-    checks.isabella_genesis = { ok: false, error: "genesis_service_unavailable" };
-    overallOk = false;
-  }
-
-  const status = overallOk ? 200 : 503;
-  return new Response(
-    JSON.stringify({
+  return json(
+    {
       status: overallOk ? "ready" : "not_ready",
       checks,
       timestamp: new Date().toISOString(),
-    }),
-    { status, headers: { "content-type": "application/json" } },
+    },
+    overallOk ? 200 : 503,
   );
 }

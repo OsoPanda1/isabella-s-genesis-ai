@@ -8,7 +8,7 @@
  * Flujo: EconomicEvents → ledger → projection → balance.
  * Si `proyección != saldo calculado` → ECONOMIC_INTEGRITY_FAILURE.
  */
-import { SovereignDB } from "./sovereign-engine";
+import { sovereignStateRepository } from "./sovereign-state-repository";
 import { sumEconomicBalance } from "./economic-events";
 
 export interface BalanceVerificationResult {
@@ -26,7 +26,7 @@ export interface BalanceVerificationResult {
 }
 
 export async function rebuildBalance(tenantId: string): Promise<BalanceVerificationResult> {
-  const tenant = SovereignDB.getTenant(tenantId);
+  const tenant = await sovereignStateRepository.getTenant(tenantId);
   const projectionDollars = tenant?.quotaBalance ?? 0;
 
   let calculatedMinor: bigint;
