@@ -176,7 +176,7 @@ export class DualKernel {
         classification: classification.classification as any,
         intent: request.intent,
         requestedCapabilities: request.requestedCapabilities ?? [],
-      };
+      });
 
       // ─── BETA: Capability Selection ────────────────────────
       if (governance.result === "allow" || governance.result === "review") {
