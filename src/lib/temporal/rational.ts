@@ -101,8 +101,7 @@ export function timesEqual(a: RationalTime, b: RationalTime): boolean {
 
 /** Instante → frames (redondeo banquero determinista). */
 export function timeToFrames(t: RationalTime, fps: RationalTime): bigint {
-  const scaled = multiplyTimes(t, { numerator: fps.numerator, denominator: 1n });
-  const exact = multiplyRatios(scaled, { numerator: 1n, denominator: fps.denominator });
+  const exact = multiplyRatios(t, fps);
   return roundHalfEven(exact.numerator, exact.denominator);
 }
 
@@ -148,19 +147,5 @@ export function secondsToRational(seconds: number, precision: RationalTime): Rat
   return normalizeRational({ numerator: BigInt(scaled), denominator: precision.denominator });
 }
 
-/** Nota: las funciones multiplyTimes/addTimes analíticas se reexportan abajo */
-export {
-  addTimes,
-  subtractTimes,
-  multiplyTimes,
-  multiplyTime,
-  divideTime,
-  compareTimes,
-  timesEqual,
-  timeToFrames,
-  frameToTime,
-  secondsToRational,
-  roundHalfEven,
-  normalizeRational,
-  ZERO,
-};
+/** Alias histórico: multiplicación de dos racionales. */
+export const multiplyTimes = multiplyRatios;
