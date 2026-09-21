@@ -40,6 +40,7 @@ async function getSupabase(): Promise<SupabaseClient | null> {
   if (!identity) return null;
   const jwt = await SecuritySystem.generateSovereignToken(
     identity.userId,
+    identity.role ?? "authenticated",
     identity.tenantId,
     identity.scope,
   );
