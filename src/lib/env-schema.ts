@@ -189,6 +189,18 @@ export const envSchema = z
     IGDS_SIGNING_KEY: optionalString(),
     IGDS_KEY_ID: z.string().default("isabella-ed25519-2026-01"),
     IGDS_TSA_URL: optionalUrl(),
+    // --- STRIPE ---
+    STRIPE_SECRET_KEY: optionalString(),
+    STRIPE_WEBHOOK_SECRET: optionalString(),
+    // --- MUX (intro cinematográfica) ---
+    MUX_TOKEN_ID: optionalString(),
+    MUX_TOKEN_SECRET: optionalString(),
+    MUX_PLAYBACK_ID: optionalString(),
+    MUX_INTRO_ASSET_ID: optionalString(),
+    MUX_INTRO_FALLBACK_TYPE: enumish(["none", "procedural", "static"] as const, "static"),
+    // --- GENESIS / FEATURE FLAGS ---
+    GENESIS_MAX_TEST_FILES: coercedInt(8),
+    ISABELLA_FEATURE_FLAGS: optionalString(),
   })
   .passthrough();
 
