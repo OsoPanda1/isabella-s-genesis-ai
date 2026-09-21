@@ -252,6 +252,8 @@ export function CinematicIntroContent({ onComplete, onTelemetryUpdate }: Cinemat
         />
       )}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_25%,rgba(0,0,0,.38)_62%,rgba(0,0,0,.9)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(154,236,255,.12)_1px,transparent_1px),linear-gradient(90deg,rgba(154,236,255,.12)_1px,transparent_1px)] [background-size:72px_72px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_76%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-cyan-100/20 shadow-[0_0_26px_rgba(105,220,255,.65)]" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[9vh] bg-black/75" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[9vh] bg-black/75" />
 
@@ -260,6 +262,8 @@ export function CinematicIntroContent({ onComplete, onTelemetryUpdate }: Cinemat
           <header className="absolute inset-x-8 top-[11vh] z-20 flex items-center justify-between text-[10px] uppercase tracking-[.35em] text-white/55 sm:inset-x-12">
             <span>{scene.kicker}</span>
             <span className="hidden items-center gap-3 sm:flex">
+              <span className="text-cyan-100/70">LIVE BUILD · 72%</span>
+              <span className="text-white/25">//</span>
               <span>{fps} FPS</span>
               <span className="text-white/25">//</span>
               <span>{timecode} / 00:59</span>
