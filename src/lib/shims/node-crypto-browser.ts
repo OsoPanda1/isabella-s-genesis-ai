@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars -- server-only shim signatures mirror Node APIs. */
+
 /**
  * Shim de `node:crypto` para el navegador.
  * ---------------------------------------------------------------------------
@@ -118,7 +120,8 @@ class Hash {
   }
 }
 
-export function createHash(_algorithm: string): Hash {
+export function createHash(algorithm: string): Hash {
+  void algorithm;
   return new Hash();
 }
 

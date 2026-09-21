@@ -63,7 +63,11 @@ const oauthCodes = new Map<string, OAuthCodeEntry>();
  */
 function isDevSessionEnabled(): boolean {
   const runtime = config();
-  return runtime.NODE_ENV === "development" && runtime.ISABELLA_RUNTIME_MODE === "development";
+  return (
+    runtime.NODE_ENV === "development" &&
+    runtime.ISABELLA_RUNTIME_MODE === "development" &&
+    runtime.AUTH_DEV_SESSION_ENABLED === true
+  );
 }
 
 function timingSafeEqualStrings(a: string, b: string): boolean {

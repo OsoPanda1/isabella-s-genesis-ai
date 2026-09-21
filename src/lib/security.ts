@@ -224,11 +224,7 @@ export const SecuritySystem = {
    * (ECC P-256), el único secreto compartido que PostgREST acepta para HS256 es
    * el Legacy secret. Sin él, se niega la operación (fail-closed → RLS imposible).
    */
-  generateSupabaseRlsToken(
-    userId: string,
-    tenantId: string,
-    scope: string,
-  ): string {
+  generateSupabaseRlsToken(userId: string, tenantId: string, scope: string): string {
     const legacy = config().SUPABASE_JWT_SECRET;
     if (!legacy) {
       throw new Error(
@@ -279,7 +275,7 @@ export const SecuritySystem = {
       if (outcome.success) {
         return { success: true, claims: outcome.claims, provider: "auth-verification-layer" };
       }
-    } catch (_authError) {
+    } catch {
       // Continuar con fallback legacy si AuthVerificationLayer falla
     }
 
@@ -534,6 +530,6 @@ export class UpstreamCircuitBreaker {
       console.error("[CircuitBreaker] Failure detected in HALF_OPEN. Breaker reverted to OPEN.");
     }
   }
-};
+}
 
 export const globalCircuitBreaker = new UpstreamCircuitBreaker();

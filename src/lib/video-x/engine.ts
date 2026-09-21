@@ -14,14 +14,8 @@ import type {
   QualityReport,
   C2PAManifest,
   ImpactAnalysisResult,
-  ShotCardX,
 } from "./types";
-import {
-  calculateNarrativeImpact,
-  DEFAULT_SHOT_CARDS,
-  evaluateMultimodalQA,
-  buildC2PAManifest,
-} from "./contracts";
+import { calculateNarrativeImpact, evaluateMultimodalQA, buildC2PAManifest } from "./contracts";
 
 export const PROJECT_STATUS_FLOW: ProjectStatus[] = [
   "IDEA",

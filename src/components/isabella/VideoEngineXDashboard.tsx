@@ -7,15 +7,12 @@ import {
   ShieldCheck,
   Zap,
   Activity,
-  Layers,
-  Clock,
   Cpu,
   RefreshCw,
   AlertTriangle,
   FileCheck,
   CheckCircle2,
   Sliders,
-  Maximize2,
   Lock,
   GitBranch,
 } from "lucide-react";
@@ -27,7 +24,6 @@ import type {
   C2PAManifest,
   ImpactAnalysisResult,
   ShotCardX,
-  TargetFormat,
 } from "@/lib/video-x/types";
 import { PROJECT_STATUS_FLOW } from "@/lib/video-x/engine";
 
@@ -89,7 +85,7 @@ export function VideoEngineXDashboard() {
           setProjects(projData.projects);
           if (projData.projects.length > 0) {
             setSelectedProjectId(projData.projects[0].id);
-            fetchProjectDetails(projData.projects[0].id);
+            void fetchProjectDetails(projData.projects[0].id);
           }
         }
         if (cardsData.success) {
@@ -99,7 +95,7 @@ export function VideoEngineXDashboard() {
         console.error("Error initializing Video X Dashboard", e);
       }
     }
-    initData();
+    void initData();
   }, [fetchProjectDetails]);
 
   // Advance state machine
@@ -117,7 +113,7 @@ export function VideoEngineXDashboard() {
       const data = await res.json();
       if (data.success) {
         setProject(data.project);
-        fetchProjectDetails(project.id);
+        void fetchProjectDetails(project.id);
       }
     } catch (e) {
       console.error("Error advancing state", e);
@@ -162,7 +158,7 @@ export function VideoEngineXDashboard() {
       });
       const data = await res.json();
       if (data.success) {
-        fetchProjectDetails(project.id);
+        void fetchProjectDetails(project.id);
       }
     } catch (e) {
       console.error("Error regenerating shot", e);
@@ -205,7 +201,7 @@ export function VideoEngineXDashboard() {
       const data = await res.json();
       if (data.success) {
         setC2paManifest(data.c2paManifest);
-        fetchProjectDetails(project.id);
+        void fetchProjectDetails(project.id);
       }
     } catch (e) {
       console.error("Error exporting C2PA", e);
@@ -230,7 +226,7 @@ export function VideoEngineXDashboard() {
       if (data.success) {
         setProjects((prev) => [...prev, data.project]);
         setSelectedProjectId(data.project.id);
-        fetchProjectDetails(data.project.id);
+        void fetchProjectDetails(data.project.id);
         setShowCreateModal(false);
         setNewTitle("");
         setNewPremise("");
@@ -271,7 +267,7 @@ export function VideoEngineXDashboard() {
             value={selectedProjectId}
             onChange={(e) => {
               setSelectedProjectId(e.target.value);
-              fetchProjectDetails(e.target.value);
+              void fetchProjectDetails(e.target.value);
             }}
             className="rounded-xl border border-border/40 bg-background/80 px-3 py-1.5 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-electric"
           >

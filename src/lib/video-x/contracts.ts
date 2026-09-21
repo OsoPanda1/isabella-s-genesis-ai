@@ -216,6 +216,9 @@ export function selectShotCard(
   format: TargetFormat,
   maxCostUsd: number,
 ): ShotCardX {
+  void emotionalIntensity;
+  void format;
+  void maxCostUsd;
   const matches = DEFAULT_SHOT_CARDS.filter((c) => c.category === category);
   if (matches.length > 0) {
     return matches[0];

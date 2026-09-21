@@ -58,7 +58,7 @@ function hashBlock(block: Omit<BlockPIBlock, "blockHash">): string {
 function mapRow(row: Record<string, unknown>): BlockPIBlock {
   return {
     index: Number(row.index),
-    timestamp: new Date(row.created_at as string ?? row.timestamp as string).toISOString(),
+    timestamp: new Date((row.created_at as string) ?? (row.timestamp as string)).toISOString(),
     tenantId: String(row.tenant_id),
     userId: String(row.user_id),
     operation: String(row.operation),

@@ -1,4 +1,8 @@
-import { ISABELLA_MODULE_CATALOG, type IsabellaCoreId, type IsabellaModuleId } from "../isabella-catalog";
+import {
+  ISABELLA_MODULE_CATALOG,
+  type IsabellaCoreId,
+  type IsabellaModuleId,
+} from "../isabella-catalog";
 
 export interface CoreTelemetryMetric {
   id: IsabellaCoreId;

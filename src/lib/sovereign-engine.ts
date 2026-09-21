@@ -20,7 +20,7 @@ const PERSISTENCE_FILE_PATH = path.join(process.cwd(), "isabella_sovereign_db.js
  * el runtime NIEga la operación en vez de persistir en JSON silenciosamente.
  * El end-state certificado es `DURABLE_JSON_ALLOWED=false` con repos Postgres.
  */
-function assertJsonPersistenceAllowed(): void {
+export function assertJsonPersistenceAllowed(): void {
   const cfg = config();
   const isProdLike =
     cfg.ISABELLA_RUNTIME_MODE === "production" || cfg.ISABELLA_RUNTIME_MODE === "staging";
@@ -236,7 +236,7 @@ export class SovereignDB {
    * share one refresh. Mutating paths must request a fresh read (`maxAgeMs: 0`)
    * before a read-modify-write sequence.
    */
-public static async hydrate({
+  public static async hydrate({
     maxAgeMs = 0,
   }: { maxAgeMs?: number } = {}): Promise<DatabaseSchema> {
     // Fail-closed: si la persistencia anterior falló, no servir estado obsoleto.
