@@ -1,0 +1,12 @@
+[
+  {
+    "id": "dev_user_local:1d155042-b750-4b13-a898-8113e407bd1c",
+    "tenantId": "dev_user_local:1d155042-b750-4b13-a898-8113e407bd1c",
+    "userId": "dev_user_local",
+    "principalType": "user",
+    "tokenJti": "1d155042-b750-4b13-a898-8113e407bd1c",
+    "expiresAt": "2026-09-21T09:59:19.420Z",
+    "createdAt": "2026-09-21T08:59:19.420Z",
+    "tenant_id": "dev_user_local:1d155042-b750-4b13-a898-8113e407bd1c"
+  }
+]
