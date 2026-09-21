@@ -36,17 +36,14 @@ const optionalUrl = () =>
     }
   }, z.string().url().optional());
 const bool = (def: boolean) =>
-  z.preprocess(
-    (v) =>
-      typeof v === "boolean"
-        ? v
-        : typeof v === "string"
-          ? v.trim().toLowerCase() === "true"
-          : v.trim().toLowerCase() === "false"
-            ? false
-            : undefined,
-    z.boolean().default(def),
-  );
+  z.preprocess((v) => {
+    if (typeof v === "boolean") return v;
+    if (typeof v !== "string") return undefined;
+    const normalized = v.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") return true;
+    if (normalized === "false" || normalized === "0") return false;
+    return undefined;
+  }, z.boolean().default(def));
 
 export const envSchema = z
   .object({

@@ -4,7 +4,6 @@ import * as crypto from "node:crypto";
 import { Pool } from "pg";
 import { config } from "./config";
 import { SecuritySystem } from "./security";
-import { config } from "./config";
 import type { ApiKeyRecord } from "./credential-types";
 
 // ============================================================================
