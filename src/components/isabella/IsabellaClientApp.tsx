@@ -1,7 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, FolderOpen } from "lucide-react";
 import { useIsabella } from "@/lib/useIsabella";
-import type { NavTabId } from "@/components/isabella/CrystalNavigation";
+import {
+  CrystalNavigation,
+  NAV_GROUPS,
+  type NavTabId,
+} from "@/components/isabella/CrystalNavigation";
 
 const CinematicIntro = lazy(() => import("@/components/isabella/CinematicIntro"));
 const CommandLine = lazy(() =>
@@ -22,11 +26,6 @@ const RightRails = lazy(() =>
 const Starfield = lazy(() =>
   import("@/components/isabella/Starfield").then((m) => ({
     default: m.Starfield,
-  })),
-);
-const CrystalNavigation = lazy(() =>
-  import("@/components/isabella/CrystalNavigation").then((m) => ({
-    default: m.CrystalNavigation,
   })),
 );
 const ApiCatalogExplorer = lazy(() =>
@@ -82,8 +81,6 @@ const VideoEngineXDashboard = lazy(() =>
 
 const INTRO_SEEN_KEY = "isabella.entry.intro.v1";
 
-type NavModule = typeof import("@/components/isabella/CrystalNavigation");
-
 function ClientFallback({ label = "Cargando módulo Isabella…" }: { label?: string }) {
   return (
     <div className="flex min-h-[320px] items-center justify-center rounded-3xl border border-border/20 bg-background/40">
@@ -136,23 +133,12 @@ function IsabellaInterface() {
   const [upperOpen, setUpperOpen] = useState(false);
   const [middleOpen, setMiddleOpen] = useState(false);
   const [lowerOpen, setLowerOpen] = useState(false);
-  const [navModule, setNavModule] = useState<NavModule | null>(null);
   const lastInput = useRef<{
     text: string;
     attachments: Parameters<typeof isabella.send>[1];
     config?: Parameters<typeof isabella.send>[2];
   }>({ text: "", attachments: [] });
   const fileRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    void import("@/components/isabella/CrystalNavigation").then((module) => {
-      if (active) setNavModule(module);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const handleMonetizationNavigate = useCallback((subTab: string) => {
     setActiveTab("monetization");
@@ -176,9 +162,7 @@ function IsabellaInterface() {
     [isabella],
   );
 
-  if (!navModule) return <ClientFallback label="Cargando navegación soberana…" />;
-
-  const navGroups = navModule.NAV_GROUPS(
+  const navGroups = NAV_GROUPS(
     { cognition: upperOpen, catalog: middleOpen, sovereignty: lowerOpen },
     (id) => {
       if (id === "cognition") setUpperOpen((open) => !open);
@@ -276,10 +260,11 @@ function IsabellaInterface() {
                     Isabella C.R.O.W.N. Terminal
                   </h1>
                   <p className="mt-0.5 font-mono text-[9.5px] uppercase tracking-widest text-muted-foreground">
-{activeTab === "terminal" &&
-  `                    Canal gobernado: ${isabella.preset.name} · Decisión humana`}
-{activeTab === "skills" && "Catálogo unificado ORION · SOPHIA · ARGUS · MNEMOS · LUMEN"}
-{activeTab === "cli" && "Consola Retro Directa"}
+                    {activeTab === "terminal" &&
+                      `                    Canal gobernado: ${isabella.preset.name} · Decisión humana`}
+                    {activeTab === "skills" &&
+                      "Catálogo unificado ORION · SOPHIA · ARGUS · MNEMOS · LUMEN"}
+                    {activeTab === "cli" && "Consola Retro Directa"}
                     {activeTab === "governance" && "Gobernanza y Salud de Módulos Cognitivos"}
                     {activeTab === "catalog" && "Gobernanza de APIs e Invocaciones"}
                     {activeTab === "monetization" && "Tablero de Consumo Soberano"}
@@ -367,17 +352,17 @@ function IsabellaInterface() {
               </div>
             )}
 
-      {activeTab === "skills" && (
-        <div className="mx-auto max-w-[1300px] overflow-hidden rounded-3xl crystal-glow-electric">
-          <SovereignSkillsPanel />
-        </div>
-      )}
+            {activeTab === "skills" && (
+              <div className="mx-auto max-w-[1300px] overflow-hidden rounded-3xl crystal-glow-electric">
+                <SovereignSkillsPanel />
+              </div>
+            )}
 
-      {activeTab === "cli" && (
-        <div className="mx-auto max-w-[1300px] overflow-hidden rounded-3xl crystal-glow-electric">
-          <TerminalView />
-        </div>
-      )}
+            {activeTab === "cli" && (
+              <div className="mx-auto max-w-[1300px] overflow-hidden rounded-3xl crystal-glow-electric">
+                <TerminalView />
+              </div>
+            )}
             {activeTab === "governance" && (
               <div className="mx-auto max-w-[1300px]">
                 <CognitiveStatusDashboard />

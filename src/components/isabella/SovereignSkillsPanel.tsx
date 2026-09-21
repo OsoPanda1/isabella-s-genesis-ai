@@ -274,7 +274,7 @@ export function SovereignSkillsPanel() {
       try {
         const parsedInput = JSON.parse(testInput);
         const { runIsabellaSkill } = await import("@/lib/skills/run-skill");
-      const result = await runIsabellaSkill(selectedId, parsedInput, {
+        const result = await runIsabellaSkill(selectedId, parsedInput, {
           requestId: crypto.randomUUID(),
           locale: "es",
           federation: "CIVILIZATIONAL_ARCHIVE",
