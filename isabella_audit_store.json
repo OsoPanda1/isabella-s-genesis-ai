@@ -1,0 +1,31 @@
+{
+  "events": [
+    {
+      "id": "evt_f23b83b2-843d-4243-952b-e084430cc4b7",
+      "timestamp": "2026-09-21T08:59:19.840Z",
+      "traceId": "tr_205D39CA",
+      "correlationId": "corr_CCADE0ED",
+      "actorIp": "127.0.0.1",
+      "event": "AUTH_SUCCESS_INTERNAL_SOVEREIGN",
+      "severity": "S3",
+      "details": "{\"provider\":\"internal_sovereign\",\"sub\":\"dev_user_local\",\"tenantId\":\"nodo-cero\",\"role\":\"SovereignOwner\",\"scope\":\"isabella:chat isabella:ledger:write isabella:sandbox:run\",\"jti\":\"1d155042-b750-4b13-a898-8113e407bd1c\"}",
+      "remediated": false,
+      "verificationHash": "c8896be0e4886aba91e082799918a036865e0c74c4a3883887c447e212c9cecf",
+      "previousLogHash": "4130f34ce2fb991eda57a4260e67b287ff594277e76eb0b237e86c23b373d842"
+    },
+    {
+      "id": "evt_d5001445-e8b5-47ef-8cbf-6ebad95a4ab2",
+      "timestamp": "2026-09-21T08:59:19.838Z",
+      "traceId": "tr_9D8D98521422",
+      "correlationId": "corr_3960FE836934",
+      "actorIp": "unknown",
+      "event": "AUTH_SUCCESS_INTERNAL_SOVEREIGN",
+      "severity": "S3",
+      "details": "{\"provider\":\"internal_sovereign\",\"sub\":\"dev_user_local\",\"tenantId\":\"nodo-cero\",\"role\":\"SovereignOwner\",\"scope\":\"isabella:chat isabella:ledger:write isabella:sandbox:run\",\"jti\":\"1d155042-b750-4b13-a898-8113e407bd1c\"}",
+      "remediated": false,
+      "verificationHash": "4130f34ce2fb991eda57a4260e67b287ff594277e76eb0b237e86c23b373d842",
+      "previousLogHash": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "genesisPreviousHash": "0000000000000000000000000000000000000000000000000000000000000000"
+}
