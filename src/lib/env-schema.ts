@@ -1,31 +1,37 @@
 import { z } from "zod";
 
-const enumish = <T extends readonly [string, ...string[]]>(values: T, def: T[number]) =>
+type Loose<T> = z.ZodType<T, z.ZodTypeDef, unknown>;
+
+const enumish = <T extends readonly [string, ...string[]]>(
+  values: T,
+  def: T[number],
+): Loose<T[number]> =>
   z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.enum(values).default(def),
-  );
+  ) as Loose<T[number]>;
 
 export const runtimeModeSchema = enumish(
   ["development", "staging", "production", "emergency", "maintenance"] as const,
   "development",
 );
 export type RuntimeMode = z.infer<typeof runtimeModeSchema>;
-const coercedInt = (def: number) => z.coerce.number().int().nonnegative().default(def);
-const optionalString = () =>
+const coercedInt = (def: number): Loose<number> =>
+  z.coerce.number().int().nonnegative().default(def) as unknown as Loose<number>;
+const optionalString = (): Loose<string | undefined> =>
   z.preprocess(
     (v) =>
       typeof v === "string" && v.trim() && !["undefined", "null"].includes(v.trim())
         ? v.trim()
         : undefined,
     z.string().optional(),
-  );
-const optionalMinString = (min: number) =>
+  ) as Loose<string | undefined>;
+const optionalMinString = (min: number): Loose<string | undefined> =>
   z.preprocess(
     (v) => (typeof v === "string" && v.trim() ? v.trim() : undefined),
     z.string().min(min).optional(),
-  );
-const optionalUrl = () =>
+  ) as Loose<string | undefined>;
+const optionalUrl = (): Loose<string | undefined> =>
   z.preprocess((v) => {
     if (typeof v !== "string" || !v.trim()) return undefined;
     try {
@@ -34,8 +40,8 @@ const optionalUrl = () =>
     } catch {
       return undefined;
     }
-  }, z.string().url().optional());
-const bool = (def: boolean) =>
+  }, z.string().url().optional()) as Loose<string | undefined>;
+const bool = (def: boolean): Loose<boolean> =>
   z.preprocess((v) => {
     if (typeof v === "boolean") return v;
     if (typeof v !== "string") return undefined;
@@ -43,7 +49,7 @@ const bool = (def: boolean) =>
     if (normalized === "true" || normalized === "1") return true;
     if (normalized === "false" || normalized === "0") return false;
     return undefined;
-  }, z.boolean().default(def));
+  }, z.boolean().default(def)) as Loose<boolean>;
 
 export const envSchema = z
   .object({
