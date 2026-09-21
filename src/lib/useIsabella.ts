@@ -202,6 +202,11 @@ export function useIsabella() {
           token = "";
         }
       }
+      if (!token) {
+        throw new Error(
+          "Sesión no disponible. El canal de percepción necesita una sesión firmada; vuelve a intentar para renovarla.",
+        );
+      }
       const userMsg: TerminalMessage = {
         id: uid(),
         role: "user",
@@ -276,9 +281,9 @@ export function useIsabella() {
           );
           const rawMessage = detail.message ?? detail.error ?? "Fallo de percepción.";
           if (
-            res.status === 403 &&
+            (res.status === 401 || res.status === 403) &&
             typeof rawMessage === "string" &&
-            /tenant|aislamiento/i.test(rawMessage)
+            /Bearer|OIDC|firma criptográfica|tenant|aislamiento|sesión/i.test(rawMessage)
           ) {
             try {
               window.sessionStorage.removeItem("isabella_session_token");
