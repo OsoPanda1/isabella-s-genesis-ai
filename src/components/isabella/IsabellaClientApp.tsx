@@ -39,6 +39,11 @@ const TerminalView = lazy(() =>
     default: m.TerminalView,
   })),
 );
+const SovereignSkillsPanel = lazy(() =>
+  import("@/components/isabella/SovereignSkillsPanel").then((m) => ({
+    default: m.SovereignSkillsPanel,
+  })),
+);
 const MonetizationDashboard = lazy(() =>
   import("@/components/isabella/MonetizationDashboard").then((m) => ({
     default: m.MonetizationDashboard,
@@ -271,9 +276,10 @@ function IsabellaInterface() {
                     Isabella C.R.O.W.N. Terminal
                   </h1>
                   <p className="mt-0.5 font-mono text-[9.5px] uppercase tracking-widest text-muted-foreground">
-                    {activeTab === "terminal" &&
-                      `                    Canal gobernado: ${isabella.preset.name} · Decisión humana`}
-                    {activeTab === "cli" && "Consola Retro Directa"}
+{activeTab === "terminal" &&
+  `                    Canal gobernado: ${isabella.preset.name} · Decisión humana`}
+{activeTab === "skills" && "Catálogo unificado ORION · SOPHIA · ARGUS · MNEMOS · LUMEN"}
+{activeTab === "cli" && "Consola Retro Directa"}
                     {activeTab === "governance" && "Gobernanza y Salud de Módulos Cognitivos"}
                     {activeTab === "catalog" && "Gobernanza de APIs e Invocaciones"}
                     {activeTab === "monetization" && "Tablero de Consumo Soberano"}
@@ -361,11 +367,17 @@ function IsabellaInterface() {
               </div>
             )}
 
-            {activeTab === "cli" && (
-              <div className="mx-auto max-w-[1300px] overflow-hidden rounded-3xl crystal-glow-electric">
-                <TerminalView />
-              </div>
-            )}
+      {activeTab === "skills" && (
+        <div className="mx-auto max-w-[1300px] overflow-hidden rounded-3xl crystal-glow-electric">
+          <SovereignSkillsPanel />
+        </div>
+      )}
+
+      {activeTab === "cli" && (
+        <div className="mx-auto max-w-[1300px] overflow-hidden rounded-3xl crystal-glow-electric">
+          <TerminalView />
+        </div>
+      )}
             {activeTab === "governance" && (
               <div className="mx-auto max-w-[1300px]">
                 <CognitiveStatusDashboard />
