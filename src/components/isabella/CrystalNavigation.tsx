@@ -28,6 +28,7 @@ import {
 
 export type NavTabId =
   | "terminal"
+  | "skills"
   | "cli"
   | "governance"
   | "catalog"
@@ -185,6 +186,14 @@ export const NAV_GROUPS = (
         id: "terminal",
         label: "Terminal Cognitivo",
         icon: <MessageSquare className="size-4" />,
+        glow: "crystal-glow-electric",
+        activeClass:
+          "bg-electric/15 text-electric border border-electric/30 shadow-[0_0_15px_-4px_rgba(112,102,249,0.3)]",
+      },
+      {
+        id: "skills",
+        label: "Skills Cognitivos Unificados",
+        icon: <Cpu className="size-4" />,
         glow: "crystal-glow-electric",
         activeClass:
           "bg-electric/15 text-electric border border-electric/30 shadow-[0_0_15px_-4px_rgba(112,102,249,0.3)]",

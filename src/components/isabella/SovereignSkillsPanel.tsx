@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Binary, Cpu, RefreshCw, Search, Play } from "lucide-react";
 import { listIsabellaSkills, IsabellaSkillId } from "@/lib/skills/registry";
-import { runIsabellaSkill } from "@/lib/skills/run-skill";
 
 export function SovereignSkillsPanel() {
   const [skills] = useState(listIsabellaSkills());
@@ -274,7 +273,8 @@ export function SovereignSkillsPanel() {
     setTimeout(async () => {
       try {
         const parsedInput = JSON.parse(testInput);
-        const result = await runIsabellaSkill(selectedId, parsedInput, {
+        const { runIsabellaSkill } = await import("@/lib/skills/run-skill");
+      const result = await runIsabellaSkill(selectedId, parsedInput, {
           requestId: crypto.randomUUID(),
           locale: "es",
           federation: "CIVILIZATIONAL_ARCHIVE",
