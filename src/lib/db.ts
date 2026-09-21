@@ -26,6 +26,7 @@ export interface MonetizationAccount {
   profileComplete: boolean;
   sanctioned: boolean;
   underFraudReview: boolean;
+  createdAt: string;
 }
 
 type MonetizationAccountInput = Partial<MonetizationAccount> & { userId: string };
@@ -49,7 +50,16 @@ function getPool(): Pool {
   return pool;
 }
 
-const COLUMNS: Record<keyof MonetizationAccount, string> = {
+/** Consulta SQL parametrizada y auditable (uso interno del dominio). */
+export async function query<T = Record<string, unknown>>(
+  text: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  const res = await getPool().query(text, params as never[]);
+  return res.rows as T[];
+}
+
+const COLUMNS: Record<Exclude<keyof MonetizationAccount, "createdAt">, string> = {
   userId: "user_id",
   earnedBalanceCents: "earned_balance_cents",
   qualifiedUses: "qualified_uses",
@@ -74,6 +84,10 @@ function mapRow(row: Record<string, unknown>): MonetizationAccount {
     profileComplete: row.profile_complete === true,
     sanctioned: row.sanctioned === true,
     underFraudReview: row.under_fraud_review === true,
+    createdAt:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : String(row.created_at ?? new Date(0).toISOString()),
   };
 }
 
@@ -103,9 +117,9 @@ async function update(args: {
   where: { userId: string };
   data: Partial<Omit<MonetizationAccount, "userId">>;
 }): Promise<MonetizationAccount> {
-  const entries = Object.entries(args.data).filter(([, v]) => v !== undefined) as Array<
-    [keyof MonetizationAccount, unknown]
-  >;
+  const entries = Object.entries(args.data).filter(
+    ([key, v]) => v !== undefined && key !== "createdAt",
+  ) as Array<[Exclude<keyof MonetizationAccount, "createdAt">, unknown]>;
   if (entries.length === 0) {
     const current = await findUnique({ where: args.where });
     if (!current) throw new Error("Cuenta de monetización inexistente.");

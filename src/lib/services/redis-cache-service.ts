@@ -134,11 +134,11 @@ export class RedisCacheService {
 
         if (redisUrl && redisToken) {
           this.redisClient = new Redis({
-            url: redisUrl,
-            token: redisToken,
+            url: String(redisUrl),
+            token: String(redisToken),
             retry: {
               retries: 2,
-              backoff: (retryCount) => Math.min(100 * Math.pow(2, retryCount), 500),
+              backoff: (retryCount: number) => Math.min(100 * Math.pow(2, retryCount), 500),
             },
           });
           this.isRedisConfigured = true;

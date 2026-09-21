@@ -1,4 +1,4 @@
-import { describe, it, font, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   createRationalTime,
   rationalTimeToSeconds,
