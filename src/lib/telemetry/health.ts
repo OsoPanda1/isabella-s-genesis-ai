@@ -1,5 +1,5 @@
-import { IsabellaCoreId } from "../latam-aegis-x";
-import { CentralizedTelemetryService } from "../latam-aegis-x";
+import type { IsabellaCoreId } from "../isabella-catalog";
+import { CentralizedTelemetryService } from "./telemetry-client";
 import { ObservabilityService } from "./observability";
 
 export interface HealthEvent {

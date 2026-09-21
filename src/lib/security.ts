@@ -1,6 +1,6 @@
 import { z } from "zod";
 import * as crypto from "node:crypto";
-import { isIP } from "node:net";
+import { isIP } from "./net-address";
 import { config } from "./config";
 import { isProductionLike, resolveRuntimeMode } from "./runtime-mode";
 import { JWT_VERIFIER } from "./jwt-verifier";

@@ -1,5 +1,5 @@
 import type { RoutingDecision } from "./crown-ui";
-import type { TelemetryLog } from "./latam-aegis-x";
+import type { TelemetryLog } from "./telemetry/telemetry-client";
 
 export interface TelemetryRecord {
   traceId: string;

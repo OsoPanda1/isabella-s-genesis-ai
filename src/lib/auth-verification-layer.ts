@@ -93,7 +93,16 @@ export interface TrustedOidcProviderConfig {
 }
 
 class AuthVerificationLayerImpl {
-  private auditRepo = createAuditRepository();
+  /**
+   * El repositorio de auditoría toca el sistema de archivos: se instancia bajo
+   * demanda (nunca al importar el módulo) para que el grafo del navegador pueda
+   * evaluarse sin ejecutar código exclusivo del servidor.
+   */
+  private auditRepoRef: ReturnType<typeof createAuditRepository> | null = null;
+  private get auditRepo(): ReturnType<typeof createAuditRepository> {
+    this.auditRepoRef ??= createAuditRepository();
+    return this.auditRepoRef;
+  }
   private jwksCaches = new Map<string, JwksCache>();
   private customTrustedProviders = new Map<string, TrustedOidcProviderConfig>();
 

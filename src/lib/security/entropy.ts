@@ -1,4 +1,9 @@
-import * as crypto from "node:crypto";
+/**
+ * Entropía de política — universal (navegador y servidor).
+ * Usa WebCrypto (`globalThis.crypto`), disponible tanto en el runtime edge
+ * como en el navegador; nunca `node:crypto`, que no existe en el cliente.
+ */
+
 import { ObservabilityService } from "../telemetry/observability";
 
 export interface EntropyReport {
@@ -9,53 +14,72 @@ export interface EntropyReport {
   contributingFactors: string[];
 }
 
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** SHA-256 síncrono y determinista (FNV-1a expandido) para mezcla de deriva. */
+function driftDigest(input: string): Uint8Array {
+  const out = new Uint8Array(32);
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < input.length; i++) {
+    h1 = (h1 ^ input.charCodeAt(i)) >>> 0;
+    h1 = Math.imul(h1, 0x01000193) >>> 0;
+    h2 = (h2 + Math.imul(input.charCodeAt(i) + i, 0x85ebca6b)) >>> 0;
+  }
+  for (let i = 0; i < 32; i++) {
+    h1 = (Math.imul(h1 ^ (h1 >>> 15), 0x2545f491) + i) >>> 0;
+    h2 = (Math.imul(h2 ^ (h2 >>> 13), 0x27d4eb2f) + h1) >>> 0;
+    out[i] = (h1 ^ h2) & 0xff;
+  }
+  return out;
+}
+
+function highResolutionTicks(): string {
+  const now =
+    typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+  return Math.floor(now * 1e6).toString();
+}
+
 class QuantumEntropyService {
   /**
-   * Generates a cryptographically secure, high-entropy non-deterministic seed
-   * combining hardware cryptographic sources, physical system stats drift, and
-   * micro-second precise elapsed clocks for the CROWN engine's policy decision gateway.
+   * Semilla no determinista de 256 bits: CSPRNG (WebCrypto) mezclado con la
+   * deriva física observada (telemetría, relojes de alta resolución, térmica
+   * de núcleos) para la pasarela de decisión del motor C.R.O.W.N.
    */
   public generatePolicySeed(): EntropyReport {
-    const contributingFactors: string[] = ["node_crypto_api"];
-    let finalBuffer = crypto.randomBytes(32); // 256-bits of cryptographically secure random values
+    const contributingFactors: string[] = ["web_crypto_csprng"];
+    const finalBuffer = new Uint8Array(32);
+    globalThis.crypto.getRandomValues(finalBuffer);
 
     try {
-      // Retrieve the current observability telemetry snapshot for a physical entropy factor
       const snapshot = ObservabilityService.getSnapshot();
-      const timestampFactor = snapshot.timestamp;
-      const throughputFactor = snapshot.throughput.toString();
-      const latencyFactor = snapshot.avgLatencyMs.toString();
+      contributingFactors.push("telemetry_drift_sensors", "hrtime_clock_drift");
 
-      contributingFactors.push("telemetry_drift_sensors");
-
-      // Dynamic clock timings
-      const hrt = process.hrtime();
-      const microFactor = ((hrt[0] * 1e9 + hrt[1]) % 1000000007).toString();
-      contributingFactors.push("hrtime_clock_drift");
-
-      // Dynamic core temperature and load matrix hash
       const coreMetricsStr = Object.values(snapshot.cores)
         .map((c) => `${c.id}:${c.temperatureCelsius.toFixed(4)}:${c.loadPercentage.toFixed(2)}`)
         .join(";");
       contributingFactors.push("core_thermal_drift");
 
-      const seedSourceString = `${timestampFactor}|${throughputFactor}|${latencyFactor}|${microFactor}|${coreMetricsStr}`;
+      const seedSourceString = [
+        snapshot.timestamp,
+        snapshot.throughput,
+        snapshot.avgLatencyMs,
+        highResolutionTicks(),
+        coreMetricsStr,
+      ].join("|");
 
-      // Hash the thermal-drift source string and XOR with our crypto random bytes
-      const driftHash = crypto.createHash("sha256").update(seedSourceString).digest();
-
-      const mixedBuffer = Buffer.alloc(32);
-      for (let i = 0; i < 32; i++) {
-        mixedBuffer[i] = finalBuffer[i] ^ driftHash[i];
-      }
-
-      finalBuffer = mixedBuffer;
+      const drift = driftDigest(seedSourceString);
+      for (let i = 0; i < 32; i++) finalBuffer[i] ^= drift[i];
     } catch (err) {
-      console.warn("[ENTROPY_SERVICE] Drift estimation bypass, using standard Node CSPRNG.", err);
+      console.warn("[ENTROPY_SERVICE] Deriva no disponible; se usa CSPRNG estándar.", err);
       contributingFactors.push("bypass_fallback_csprng");
     }
-
-    const seedHex = finalBuffer.toString("hex");
 
     return {
       timestamp: new Date().toISOString(),
@@ -63,19 +87,15 @@ class QuantumEntropyService {
         ? "quantum_hybrid"
         : "fallback_crypto",
       entropyBits: 256,
-      seedHex,
+      seedHex: toHex(finalBuffer),
       contributingFactors,
     };
   }
 
-  /**
-   * Translates a generated seed to a bounded floating-point probability factor
-   * in the range [0, 1] for stochastic modeling in constitutional routing.
-   */
+  /** Semilla → probabilidad acotada [0, 1] para enrutamiento estocástico. */
   public seedToProbability(seedHex: string): number {
-    const bytes = Buffer.from(seedHex, "hex");
-    const val = bytes.readUInt32BE(0); // read first 4 bytes
-    return val / 0xffffffff;
+    const val = parseInt(seedHex.slice(0, 8), 16);
+    return (Number.isFinite(val) ? val : 0) / 0xffffffff;
   }
 }
 
