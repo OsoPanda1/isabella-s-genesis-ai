@@ -1,22 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Route as ServerRoute } from "../../server-routes/api/security";
 
-// Canonical handler lives in server-routes/api/security.ts. Keep the public
-// route as a typed delegation boundary so future edits cannot silently widen
-// the endpoint to an untyped/unauthenticated handler.
-type ServerRequestContext = { request: Request };
-type ServerHandlers = {
-  POST: (context: ServerRequestContext) => Promise<Response>;
-};
+/**
+ * Frontera de delegación: la lógica canónica vive en `@/server-routes/api/security`
+ * (ver ADR-001-source-of-truth). El módulo servidor se carga de forma
+ * perezosa dentro del handler para que el grafo del navegador nunca lo
+ * alcance; en el cliente estos handlers se eliminan en build.
+ */
+type Handlers = Record<string, (ctx: unknown) => Promise<Response>>;
 
-const server = ServerRoute.options.server;
-if (!server?.handlers) throw new Error("Ruta servidora sin handlers.");
-const handlers = server.handlers as unknown as ServerHandlers;
+async function resolveHandlers(): Promise<Handlers> {
+  const { Route: ServerRoute } = await import("@/server-routes/api/security");
+  const server = ServerRoute.options.server;
+  if (!server?.handlers) throw new Error("Ruta servidora sin handlers.");
+  return server.handlers as unknown as Handlers;
+}
 
 export const Route = createFileRoute("/api/security")({
   server: {
     handlers: {
-      POST: ({ request }) => handlers.POST({ request }),
+      POST: async (context) => resolveHandlers().then((h) => h.POST(context)),
     },
   },
 });

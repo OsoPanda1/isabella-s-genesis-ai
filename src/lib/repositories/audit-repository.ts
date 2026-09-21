@@ -37,7 +37,14 @@ export interface AuditStoreFile {
 }
 
 const GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000";
-const STORE_PATH = path.join(process.cwd(), "isabella_audit_store.json");
+/**
+ * La ruta del store se resuelve de forma perezosa: evaluarla al importar el
+ * módulo rompía el grafo del navegador (`process.cwd` no existe allí).
+ */
+function defaultStorePath(): string {
+  const cwd = typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : ".";
+  return path.join(cwd, "isabella_audit_store.json");
+}
 
 function sha256(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex");
@@ -46,7 +53,7 @@ function sha256(input: string): string {
 /**
  * Crea un repositorio de auditoría ligado a una ruta opcional (inyectable).
  */
-export function createAuditRepository(storePath: string = STORE_PATH) {
+export function createAuditRepository(storePath: string = defaultStorePath()) {
   // Mutex por store: escrituras concurrentes del proceso se serializan;
   // dos appends jamás leen el mismo "último hash" (sin bifurcación).
   let tail: Promise<unknown> = Promise.resolve();

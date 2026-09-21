@@ -1,11 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Route as ServerRoute } from "../../server-routes/api/observability";
 
-type Handlers = { GET: (ctx: unknown) => Promise<Response> };
-const server = ServerRoute.options.server;
-if (!server) throw new Error("Ruta observability sin handlers.");
-const handlers = server.handlers as unknown as Handlers;
+/**
+ * Frontera de delegación: la lógica canónica vive en `@/server-routes/api/observability`
+ * (ver ADR-001-source-of-truth). El módulo servidor se carga de forma
+ * perezosa dentro del handler para que el grafo del navegador nunca lo
+ * alcance; en el cliente estos handlers se eliminan en build.
+ */
+type Handlers = Record<string, (ctx: unknown) => Promise<Response>>;
+
+async function resolveHandlers(): Promise<Handlers> {
+  const { Route: ServerRoute } = await import("@/server-routes/api/observability");
+  const server = ServerRoute.options.server;
+  if (!server?.handlers) throw new Error("Ruta servidora sin handlers.");
+  return server.handlers as unknown as Handlers;
+}
 
 export const Route = createFileRoute("/api/observability")({
-  server: { handlers: { GET: (context) => handlers.GET(context) } },
+  server: {
+    handlers: {
+      GET: async (context) => resolveHandlers().then((h) => h.GET(context)),
+    },
+  },
 });

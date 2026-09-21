@@ -28,7 +28,8 @@ import {
 import { ObservabilityService, ObservabilitySnapshot } from "@/lib/telemetry/observability";
 import { HealthMonitorService, HealthEvent } from "@/lib/telemetry/health";
 import { EntropyService, EntropyReport } from "@/lib/security/entropy";
-import { CentralizedTelemetryService, IsabellaCoreId } from "@/lib/latam-aegis-x";
+import { CentralizedTelemetryService } from "@/lib/telemetry/telemetry-client";
+import type { IsabellaCoreId } from "@/lib/isabella-catalog";
 import { exportSecurityCompliancePdf } from "@/lib/audit-export";
 
 interface ChartPoint {

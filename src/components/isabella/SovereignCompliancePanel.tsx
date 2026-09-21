@@ -9,7 +9,7 @@ import {
   CheckCircle,
   AlertTriangle,
 } from "lucide-react";
-import { CentralizedTelemetryService, TelemetryLog } from "@/lib/latam-aegis-x";
+import { CentralizedTelemetryService, type TelemetryLog } from "@/lib/telemetry/telemetry-client";
 import { exportSecurityCompliancePdf } from "@/lib/audit-export";
 import { runIsabellaSkill } from "@/lib/skills/run-skill";
 
