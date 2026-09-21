@@ -120,7 +120,7 @@ export function roundHalfEven(numerator: bigint, denominator: bigint): bigint {
   const r = n % d;
   // si 2r == d → empate → par
   if (r * 2n === d) {
-    return q % 2n === 0n ? (negative ? -q : q) : (negative ? -(q + 1n) : q + 1n);
+    return q % 2n === 0n ? (negative ? -q : q) : negative ? -(q + 1n) : q + 1n;
   }
   const rounded = q + (r * 2n > d ? 1n : 0n);
   return negative ? -rounded : rounded;

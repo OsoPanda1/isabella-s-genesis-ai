@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "id": "nodo-cero",
+    "slug": "nodo-cero",
+    "tier": "sovereign",
+    "quotaBalance": 0,
+    "quotaTierLimit": 1000000,
+    "createdAt": "2026-09-21T12:10:01.554Z",
+    "createdBy": "dev_user_local",
+    "metadata": {
+      "environment": "development",
+      "purpose": "preview-chat"
+    },
+    "tenantId": "nodo-cero",
+    "tenant_id": "nodo-cero"
+  }
+]

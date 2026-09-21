@@ -128,7 +128,15 @@ export function loadConfig(source: RawEnv = process.env): Env {
       cleanEnvValue(source.ISABELLA_RUNTIME_MODE) ||
       (source.NODE_ENV === "production" ? "production" : "development"),
     PUBLIC_URL: resolvePublicUrl(source),
-    AUTH_DEV_SESSION_ENABLED: cleanEnvValue(source.AUTH_DEV_SESSION_ENABLED) || "false",
+    // El preview local necesita una sesión firmada para ejercitar el flujo completo.
+    // Solo se habilita por defecto cuando el proceso es de desarrollo; staging/production
+    // siguen requiriendo una configuración explícita y nunca reciben esta credencial.
+    AUTH_DEV_SESSION_ENABLED:
+      cleanEnvValue(source.AUTH_DEV_SESSION_ENABLED) ||
+      (source.NODE_ENV !== "production" &&
+      !["staging", "production"].includes(cleanEnvValue(source.ISABELLA_RUNTIME_MODE) ?? "")
+        ? "true"
+        : "false"),
     ALLOW_GUEST_CHAT: cleanEnvValue(source.ALLOW_GUEST_CHAT) || "false",
     DATABASE_URL: databaseUrl,
     AUTH_JWT_SECRET: cleanEnvValue(source.AUTH_JWT_SECRET),
