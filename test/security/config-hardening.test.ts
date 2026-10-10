@@ -2,10 +2,34 @@ import { describe, expect, it, beforeEach } from "vitest";
 import { envSchema } from "@/lib/env-schema";
 import { canUseGuestChat, isExplicitDevelopmentAuth } from "@/lib/principal-context";
 import { loadConfig, resetConfigCache } from "@/lib/config";
+import { validateStartupEnvironment } from "@/lib/env-validator";
 
 describe("configuration hardening", () => {
   beforeEach(() => {
     resetConfigCache();
+  });
+
+  it("preserves production mode when configuration loading throws", () => {
+    const result = validateStartupEnvironment(
+      () => {
+        throw new Error("missing production configuration");
+      },
+      { NODE_ENV: "production" },
+    );
+    expect(result.valid).toBe(false);
+    expect(result.mode).toBe("production");
+    expect(result.criticalMissing).toContain("missing production configuration");
+  });
+
+  it("preserves explicit staging mode when configuration loading throws", () => {
+    const result = validateStartupEnvironment(
+      () => {
+        throw new Error("invalid staging configuration");
+      },
+      { NODE_ENV: "production", ISABELLA_RUNTIME_MODE: "staging" },
+    );
+    expect(result.valid).toBe(false);
+    expect(result.mode).toBe("staging");
   });
 
   it("rejects malformed runtime modes instead of normalizing them", () => {
