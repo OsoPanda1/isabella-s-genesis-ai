@@ -6,7 +6,7 @@ import { renderErrorPage } from "./lib/error-page";
 import { createRequestContext, withRequestContext } from "./lib/request-context";
 import { redact } from "./lib/secret-redactor";
 import { resolveTrustedClientIp } from "./lib/trusted-client-ip";
-import { validateStartupEnvironment } from "./lib/env-validator";
+import { assertStartupEnvironment, validateStartupEnvironment } from "./lib/env-validator";
 import { initOpenTelemetry, withSpan, recordMetric } from "./lib/telemetry/otel-init";
 
 const envCheck = validateStartupEnvironment();
@@ -19,7 +19,7 @@ if (!envCheck.valid && (envCheck.mode === "production" || envCheck.mode === "sta
     envCheck.criticalMissing,
     envCheck.invalidFormat.map(({ key, error }) => ({ key, error })),
   );
-  throw new Error("C.R.O.W.N. Startup Gate: configuración de producción inválida; arranque abortado.");
+  assertStartupEnvironment(envCheck);
 }
 initOpenTelemetry();
 
