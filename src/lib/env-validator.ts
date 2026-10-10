@@ -17,15 +17,25 @@ export interface EnvValidationResult {
   timestamp: string;
 }
 
-export function validateStartupEnvironment(): EnvValidationResult {
+export function validateStartupEnvironment(
+  loadConfig: () => ReturnType<typeof config> = config,
+  source: NodeJS.ProcessEnv = process.env,
+): EnvValidationResult {
   let cfg;
   try {
-    cfg = config();
+    cfg = loadConfig();
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
+    const configuredMode = source.ISABELLA_RUNTIME_MODE?.trim().toLowerCase();
+    const allowedModes: RuntimeMode[] = ["development", "staging", "production", "emergency", "maintenance"];
+    const mode: RuntimeMode = allowedModes.includes(configuredMode as RuntimeMode)
+      ? (configuredMode as RuntimeMode)
+      : source.NODE_ENV === "production"
+        ? "production"
+        : "development";
+    const errorMsg = err instanceof Error ? err.message : "Unknown configuration error";
     return {
       valid: false,
-      mode: "development",
+      mode,
       criticalMissing: [errorMsg],
       invalidFormat: [],
       warnings: [],
