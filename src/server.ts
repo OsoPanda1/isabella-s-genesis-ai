@@ -11,10 +11,15 @@ import { initOpenTelemetry, withSpan, recordMetric } from "./lib/telemetry/otel-
 
 const envCheck = validateStartupEnvironment();
 if (!envCheck.valid && (envCheck.mode === "production" || envCheck.mode === "staging")) {
+  // Do not start a production-like server with an invalid or incomplete
+  // security configuration. The validator emits variable names and safe
+  // diagnostics only; it must never print raw secret values.
   console.error(
     "[C.R.O.W.N. Startup Gate] Fallo crítico de validación de entorno:",
     envCheck.criticalMissing,
+    envCheck.invalidFormat.map(({ key, error }) => ({ key, error })),
   );
+  throw new Error("C.R.O.W.N. Startup Gate: configuración de producción inválida; arranque abortado.");
 }
 initOpenTelemetry();
 
