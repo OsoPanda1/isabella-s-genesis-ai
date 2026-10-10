@@ -2,11 +2,37 @@ import { describe, expect, it, beforeEach } from "vitest";
 import { envSchema } from "@/lib/env-schema";
 import { canUseGuestChat, isExplicitDevelopmentAuth } from "@/lib/principal-context";
 import { loadConfig, resetConfigCache } from "@/lib/config";
-import { validateStartupEnvironment } from "@/lib/env-validator";
+import { assertStartupEnvironment, validateStartupEnvironment } from "@/lib/env-validator";
 
 describe("configuration hardening", () => {
   beforeEach(() => {
     resetConfigCache();
+  });
+
+  it("aborts startup for invalid production configuration", () => {
+    expect(() =>
+      assertStartupEnvironment({
+        valid: false,
+        mode: "production",
+        criticalMissing: ["DATABASE_URL"],
+        invalidFormat: [],
+        warnings: [],
+        timestamp: new Date().toISOString(),
+      }),
+    ).toThrow(/arranque abortado/i);
+  });
+
+  it("does not apply the production startup abort to development mode", () => {
+    expect(() =>
+      assertStartupEnvironment({
+        valid: false,
+        mode: "development",
+        criticalMissing: ["optional development configuration"],
+        invalidFormat: [],
+        warnings: [],
+        timestamp: new Date().toISOString(),
+      }),
+    ).not.toThrow();
   });
 
   it("preserves production mode when configuration loading throws", () => {
