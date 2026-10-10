@@ -6,6 +6,16 @@ import {
 } from "../../src/lib/tenant-guard";
 
 describe("Tenant Isolation (P0 - Multi-Tenancy)", () => {
+  it("authenticated identity without a canonical tenant is denied, even if it requests system", () => {
+    const result = resolveTenantContext({
+      authenticated: true,
+      subject: "user_without_tenant",
+      requestedTenantId: "system",
+    });
+    expect(result.boundaryOk).toBe(false);
+    expect(() => guardTenantBoundary(result)).toThrow(TenantBoundaryError);
+  });
+
   it("USER_A -> datos A = ALLOW", () => {
     const input = {
       authenticated: true,
