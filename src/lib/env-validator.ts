@@ -116,3 +116,14 @@ export function validateStartupEnvironment(
     timestamp: new Date().toISOString(),
   };
 }
+
+
+/**
+ * Enforces the startup gate separately from collecting diagnostics so the
+ * fail-closed policy can be tested without importing the server entrypoint.
+ */
+export function assertStartupEnvironment(result: EnvValidationResult): void {
+  if (!result.valid && (result.mode === "production" || result.mode === "staging")) {
+    throw new Error("C.R.O.W.N. Startup Gate: configuración de producción inválida; arranque abortado.");
+  }
+}
