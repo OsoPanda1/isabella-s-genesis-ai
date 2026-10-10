@@ -62,19 +62,20 @@ export function mapSupabaseRole(raw: unknown): Role {
 
 /**
  * Resuelve una identidad a partir de un usuario de Supabase. El tenant
- * se deriva de `app_metadata.tenant_id` o, en su defecto, de un tenant
- * de sistema genérico — nunca se toma del cliente.
+ * se deriva exclusivamente de `app_metadata.tenant_id` o `app_metadata.tenantId`.
+ * Si falta, se conserva vacío para que la frontera de tenant rechace el request; 
+ * nunca se asigna un tenant compartido por defecto.
  */
 export function principalFromSupabaseUser(user: UserLike): ResolvedPrincipal {
   const app = (user.app_metadata ?? {}) as Record<string, unknown>;
   const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
 
   const tenantId =
-    typeof app.tenant_id === "string"
-      ? app.tenant_id
-      : typeof app.tenantId === "string"
-        ? app.tenantId
-        : "system";
+    typeof app.tenant_id === "string" && app.tenant_id.trim()
+      ? app.tenant_id.trim()
+      : typeof app.tenantId === "string" && app.tenantId.trim()
+        ? app.tenantId.trim()
+        : "";
   const role = mapSupabaseRole(app.role ?? app.roles);
   const username =
     typeof meta.username === "string"
