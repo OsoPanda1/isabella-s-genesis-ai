@@ -6,15 +6,20 @@ import { renderErrorPage } from "./lib/error-page";
 import { createRequestContext, withRequestContext } from "./lib/request-context";
 import { redact } from "./lib/secret-redactor";
 import { resolveTrustedClientIp } from "./lib/trusted-client-ip";
-import { validateStartupEnvironment } from "./lib/env-validator";
+import { assertStartupEnvironment, validateStartupEnvironment } from "./lib/env-validator";
 import { initOpenTelemetry, withSpan, recordMetric } from "./lib/telemetry/otel-init";
 
 const envCheck = validateStartupEnvironment();
 if (!envCheck.valid && (envCheck.mode === "production" || envCheck.mode === "staging")) {
+  // Do not start a production-like server with an invalid or incomplete
+  // security configuration. The validator emits variable names and safe
+  // diagnostics only; it must never print raw secret values.
   console.error(
     "[C.R.O.W.N. Startup Gate] Fallo crítico de validación de entorno:",
     envCheck.criticalMissing,
+    envCheck.invalidFormat.map(({ key, error }) => ({ key, error })),
   );
+  assertStartupEnvironment(envCheck);
 }
 initOpenTelemetry();
 

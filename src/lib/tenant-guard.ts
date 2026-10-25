@@ -53,9 +53,16 @@ export function resolveTenantContext(input: TenantGuardInput): TenantGuardResult
     };
   }
 
-  // P1: tenantId DEBE provenir exclusivamente de la identidad canónica.
-  // Nunca usar requestedTenantId como fallback si la identidad carece de tenant.
-  const canonicalTenantId = input.tenantId || "system";
+  // P0: una identidad autenticada sin tenant canónico no puede entrar a
+  // ningún tenant. No usar un tenant compartido como fallback.
+  const canonicalTenantId = input.tenantId?.trim();
+  if (!canonicalTenantId) {
+    return {
+      context: ANONYMOUS_TENANT_CONTEXT,
+      boundaryOk: false,
+      reason: "Identidad autenticada sin tenant canónico; acceso denegado.",
+    };
+  }
 
   const context: TenantContext = {
     subject: input.subject || "unknown",

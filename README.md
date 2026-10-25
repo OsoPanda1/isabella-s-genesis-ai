@@ -2,7 +2,7 @@
 
 Interfaz cognitiva territorial para explorar contexto, gobernanza, memoria, herramientas y evidencia con decisión humana explícita.
 
-> Estado de implementación: **72% funcional integrado**. El núcleo visual, navegación, intro cinematográfica, catálogo de skills, observabilidad y capas de gobernanza están operativos. La conexión de datos de producción queda preparada, pero el proyecto Supabase conectado actualmente expone **0 tablas**; por seguridad no se inventan registros ni se presentan datos simulados como reales.
+> Estado de implementación: **parcial; no se publica un porcentaje global verificable**. El repositorio contiene una aplicación Vite/React, navegación, experiencia visual, catálogo de skills y módulos de gobernanza. La preparación de producción no equivale a despliegue operativo: la instancia de Supabase descrita por el proyecto expone **0 tablas**, y la readiness debe validarse con configuración, migraciones, RLS, pruebas y despliegue del SHA exacto.
 
 ## Qué existe hoy
 
@@ -63,18 +63,21 @@ El estado actual de Supabase fue verificado antes de esta versión y no contiene
 
 El despliegue recomendado es Vercel conectado al repositorio. Ejecuta el build de producción, revisa variables de entorno, prueba autenticación y verifica las políticas RLS antes de habilitar acciones mutables.
 
-## Progreso real
+## Estado de avance verificable
 
-**72%** representa el estado integrado del producto, no una promesa de completitud:
+No se asigna un porcentaje global ni porcentajes por módulo hasta publicar una rúbrica reproducible con pesos, criterios de aceptación, evidencia vinculada y fecha de verificación. La presencia de código o documentación no demuestra por sí sola que una función esté integrada, autorizada ni operativa en producción.
 
-- 90% experiencia base y navegación
-- 85% interfaz cinematográfica y responsive
-- 78% dominio de gobernanza/seguridad
-- 65% observabilidad y contratos
-- 40% persistencia productiva, porque el esquema Supabase aún está vacío
-- 35% operación final de despliegue y datos vivos
+Los siguientes gates son los que deben aportar evidencia antes de declarar disponibilidad productiva:
 
-El porcentaje subirá cuando existan tablas reales, migraciones revisadas, RLS verificado, pruebas de extremo a extremo y despliegue validado con datos no simulados.
+- Instalación reproducible con un único package manager y lockfile versionado.
+- Typecheck, lint, suite de pruebas y build ejecutados sobre el mismo SHA.
+- Migraciones aplicadas y verificadas contra una base de pruebas desechable.
+- RLS probado con casos de acceso permitido y denegado entre tenants.
+- Autenticación y autorización verificadas en todas las rutas protegidas.
+- Health/readiness, rollback y despliegue canary comprobados en un entorno real.
+- Evidencia de despliegue asociada al commit exacto que se pretende liberar.
+
+Hasta que esos gates tengan resultados adjuntos, el avance de producción debe registrarse como **no certificado** y no como un porcentaje estimado.
 
 ## Licencia y autoría
 
